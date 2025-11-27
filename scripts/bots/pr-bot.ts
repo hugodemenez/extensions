@@ -12,29 +12,123 @@ type API = {
 
 export default async ({ github, context }: API) => {
   const assignReadyForReviewTo = "pernielsentikaer";
+  const assignReadyForReviewToWindows = "mathieudutour";
 
-  if (context.payload.action === "ready_for_review" && !context.payload.pull_request.draft) {
+  // Previous expectations: Due to our current reduced availability, the initial review may take up to 10 business days.
+  const expectations = "You can expect an initial review within five business days.";
+
+  // Optimized label helper: lazily fetch labels once per run and reuse.
+  let _labelsMemo: string[] | null = null;
+  async function _fetchLabelsOnce(): Promise<string[]> {
+    if (_labelsMemo !== null) return _labelsMemo;
     try {
+      const { data } = await github.rest.issues.listLabelsOnIssue({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: context.issue.number,
+      });
+      _labelsMemo = (data as { name: string }[]).map((l) => l.name);
+      return _labelsMemo;
+    } catch (err) {
+      console.warn("Could not fetch labels:", err);
+      _labelsMemo = [];
+      return _labelsMemo;
+    }
+  }
+
+  /**
+   * Read or sync platform labels in an optimized way:
+   * - If `platforms` is omitted, returns the current platform labels (read-only).
+   * - If `platforms` is provided, synchronizes platform labels to match (add/remove as needed) and returns final platform labels.
+   */
+  async function syncPlatformLabels(platforms?: string[]): Promise<string[]> {
+    const currentNames = await _fetchLabelsOnce();
+    const existingPlatformLabels = currentNames.filter((n) => n.startsWith("platform: "));
+
+    // Read-only mode: just return the platform labels
+    if (!platforms) {
+      return existingPlatformLabels;
+    }
+
+    const newPlatformLabels = platforms.map((p) => `platform: ${p}`);
+    const labelsToRemove = existingPlatformLabels.filter((l) => !newPlatformLabels.includes(l));
+    const labelsToAdd = newPlatformLabels.filter((l) => !existingPlatformLabels.includes(l));
+
+    // Remove labels that are no longer needed
+    for (const labelToRemove of labelsToRemove) {
+      try {
+        await github.rest.issues.removeLabel({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          issue_number: context.issue.number,
+          name: labelToRemove,
+        });
+        _labelsMemo = (_labelsMemo ?? []).filter((n) => n !== labelToRemove);
+        console.log(`Removed platform label: ${labelToRemove}`);
+      } catch (error) {
+        console.error(`Failed to remove platform label ${labelToRemove}:`, error);
+      }
+    }
+
+    // Add only the new labels that don't already exist
+    if (labelsToAdd.length > 0) {
+      try {
+        await github.rest.issues.addLabels({
+          issue_number: context.issue.number,
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          labels: labelsToAdd,
+        });
+        _labelsMemo = Array.from(new Set([...(_labelsMemo ?? []), ...labelsToAdd]));
+        console.log(`Added platform labels: ${labelsToAdd.join(", ")}`);
+      } catch (error) {
+        console.error(`Failed to add platform labels:`, error);
+      }
+    }
+
+    // Log when no changes needed
+    if (labelsToRemove.length === 0 && labelsToAdd.length === 0) {
+      console.log(`No platform label changes needed. Current labels: ${existingPlatformLabels.join(", ")}`);
+    }
+
+    const finalPlatformLabels = (_labelsMemo ?? []).filter((n) => n.startsWith("platform: "));
+    return finalPlatformLabels;
+  }
+
+  // When PR is marked ready for review, assign reviewers based on platform
+  if (context.payload.action === "ready_for_review" && !context.payload.pull_request.draft) {
+    let platformNames: string[] = [];
+    try {
+      const currentPlatformLabels = await syncPlatformLabels();
+      platformNames = currentPlatformLabels.map((l) => l.replace(/^platform:\s*/i, "").toLowerCase());
+
+      const assigneesSet = new Set<string>([assignReadyForReviewTo]);
+      if (platformNames.includes("windows")) {
+        assigneesSet.add(assignReadyForReviewToWindows);
+      }
+
+      const assignees = Array.from(assigneesSet);
+
       await github.rest.issues.addAssignees({
         owner: context.repo.owner,
         repo: context.repo.repo,
         issue_number: context.issue.number,
-        assignees: [assignReadyForReviewTo],
+        assignees,
       });
-      console.log(`Successfully assigned PR to ${assignReadyForReviewTo}`);
+      console.log(`Successfully assigned PR to ${assignees.join(", ")}`);
     } catch (error) {
-      console.error(`Failed to assign PR to ${assignReadyForReviewTo}:`, error);
+      const extraAssignee = platformNames.includes("windows") ? ` and ${assignReadyForReviewToWindows}` : '';
+      console.error(`Failed to assign PR to ${assignReadyForReviewTo}${extraAssignee}:`, error);
     }
   }
-
-  console.log("changed extensions", process.env.CHANGED_EXTENSIONS);
 
   if (!process.env.CHANGED_EXTENSIONS) {
     console.log("No changed extensions");
     return;
   }
+
   const touchedExtensions = new Set(
-    process.env.CHANGED_EXTENSIONS?.split(",")
+    process.env.CHANGED_EXTENSIONS.split(",")
       .map((x) => x.split("/").at(-2))
       .filter(Boolean) as string[]
   );
@@ -45,11 +139,7 @@ export default async ({ github, context }: API) => {
     return;
   }
 
-  // Previous expectations: Due to our current reduced availability, the initial review may take up to 10 business days.
-  const expectations = "You can expect an initial review within five business days.";
-
   const codeowners = await getCodeOwners({ github, context });
-
   const sender = context.payload.sender.login;
 
   if (sender === "raycastbot") {
@@ -65,7 +155,7 @@ export default async ({ github, context }: API) => {
   const issues = await github.paginate<{
     owner: string;
     repo: string;
-    number: number;
+    number: string | number;
     pull_request: boolean;
   }>(opts);
 
@@ -75,7 +165,7 @@ export default async ({ github, context }: API) => {
     const owners = codeowners[`/extensions/${extensionFolder}`];
 
     let aiFilesOrToolsExist = false;
-    let platforms: string[] = ["macOS"]; // Default to macOS
+    let platforms: string[] = ["macOS"];
 
     if (!owners) {
       // it's a new extension
@@ -88,12 +178,10 @@ export default async ({ github, context }: API) => {
         labels: ["new extension"],
       });
 
-      // because it's a new extension, let's check for AI stuff in the PR diff
       aiFilesOrToolsExist = await checkForAiInPullRequestDiff(extensionFolder, { github, context });
 
       if (aiFilesOrToolsExist) {
         console.log(`adding AI Extension label because ai files or tools exist for ${extensionFolder}`);
-
         await github.rest.issues.addLabels({
           issue_number: context.issue.number,
           owner: context.repo.owner,
@@ -102,17 +190,15 @@ export default async ({ github, context }: API) => {
         });
       }
 
-      // Check platforms for new extensions from PR diff
-      platforms = await getPlatformsFromPullRequestDiff(extensionFolder, { github, context });
+      const platformsFromPR = await getPlatformsFromPullRequestDiff(extensionFolder, { github, context });
+      platforms = platformsFromPR.length > 0 ? platformsFromPR : ["macOS"];
 
-      // Add platform labels
-      await addPlatformLabels(platforms, { github, context });
+      await syncPlatformLabels(platforms);
 
-      // `Congratulations on your new Raycast extension! :rocket:\n\nWe will aim to make the initial review within five working days. Once the PR is approved and merged, the extension will be available on our Store.`
       await comment({
         github,
         context,
-        comment: `Congratulations on your new Raycast extension! :rocket:\n\n${expectations}\n\nOnce the PR is approved and merged, the extension will be available on our Store.`,
+        comment: `Congratulations on your new Raycast extension! :rocket:\\n\\n${expectations}\\n\\nOnce the PR is approved and merged, the extension will be available on our Store.`,
       });
       return;
     }
@@ -124,14 +210,13 @@ export default async ({ github, context }: API) => {
       labels: ["extension fix / improvement", await extensionLabel(extensionFolder, { github, context })],
     });
 
-    // Check package.json tools first
+    // Check package.json for tools and platforms
     try {
       const packageJson = await getGitHubFile(`extensions/${extensionFolder}/package.json`, { github, context });
       const packageJsonObj = JSON.parse(packageJson);
 
       aiFilesOrToolsExist = !!packageJsonObj.tools;
       
-      // Check platforms from existing package.json
       if (packageJsonObj.platforms && Array.isArray(packageJsonObj.platforms)) {
         platforms = packageJsonObj.platforms;
       }
@@ -139,8 +224,7 @@ export default async ({ github, context }: API) => {
       console.log(`No package.json tools for ${extensionFolder}`);
     }
 
-    // For existing extensions, also check if package.json was modified in PR
-    // This will override the existing platforms if they were changed
+    // Check if package.json was modified in PR (overrides existing platforms)
     const platformsFromPR = await getPlatformsFromPullRequestDiff(extensionFolder, { github, context });
     if (platformsFromPR.length > 0) {
       platforms = platformsFromPR;
@@ -149,33 +233,20 @@ export default async ({ github, context }: API) => {
 
     // Only check AI files if no tools found in package.json
     if (!aiFilesOrToolsExist) {
-      try {
-        await getGitHubFile(`extensions/${extensionFolder}/ai.json`, { github, context });
-
-        aiFilesOrToolsExist = true;
-      } catch {
-        console.log(`No ai.json for ${extensionFolder}`);
-      }
-
-      try {
-        await getGitHubFile(`extensions/${extensionFolder}/ai.yaml`, { github, context });
-
-        aiFilesOrToolsExist = true;
-      } catch {
-        console.log(`No ai.yaml for ${extensionFolder}`);
-      }
-
-      try {
-        await getGitHubFile(`extensions/${extensionFolder}/ai.json5`, { github, context });
-
-        aiFilesOrToolsExist = true;
-      } catch {
-        console.log(`No ai.json5 for ${extensionFolder}`);
+      const aiFileNames = ["ai.json", "ai.yaml", "ai.json5"];
+      for (const aiFile of aiFileNames) {
+        try {
+          await getGitHubFile(`extensions/${extensionFolder}/${aiFile}`, { github, context });
+          aiFilesOrToolsExist = true;
+          console.log(`Found ${aiFile} for ${extensionFolder}`);
+          break;
+        } catch {
+          console.log(`No ${aiFile} for ${extensionFolder}`);
+        }
       }
     }
 
     if (!aiFilesOrToolsExist) {
-      // If we didn't find any AI files or tools in the package.json, let's check the PR diff
       aiFilesOrToolsExist = await checkForAiInPullRequestDiff(extensionFolder, { github, context });
     }
 
@@ -188,17 +259,14 @@ export default async ({ github, context }: API) => {
       });
     }
 
-    // Add platform labels for existing extensions
-    await addPlatformLabels(platforms, { github, context });
+    await syncPlatformLabels(platforms);
 
     if (!owners.length) {
       console.log("no maintainer for this extension");
       await comment({
         github,
         context,
-        comment: `Thank you for your ${isFirstContribution ? "first " : ""} contribution! :tada:
-
-This is especially helpful since there were no maintainers for this extension :pray:\n\n${expectations}`,
+        comment: `Thank you for your ${isFirstContribution ? "first " : ""} contribution! :tada:\n\nThis is especially helpful since there were no maintainers for this extension :pray:\\n\\n${expectations}`,
       });
     }
 
@@ -213,7 +281,7 @@ This is especially helpful since there were no maintainers for this extension :p
       await comment({
         github,
         context,
-        comment: `Thank you for the update! :tada:\n\n${expectations}`,
+        comment: `Thank you for the update! :tada:\\n\\n${expectations}`,
       });
       return;
     }
@@ -230,13 +298,9 @@ This is especially helpful since there were no maintainers for this extension :p
     await comment({
       github,
       context,
-      comment: `Thank you for your ${isFirstContribution ? "first " : ""} contribution! :tada:
-
-🔔 ${[...new Set(owners.filter((x) => x !== sender))]
+      comment: `Thank you for your ${isFirstContribution ? "first " : ""} contribution! :tada:\n\n🔔 ${[...new Set(owners.filter((x) => x !== sender))]
         .map((x) => `@${x}`)
-        .join(
-          " "
-        )} you might want to have a look.\n\nYou can use [this guide](https://developers.raycast.com/basics/review-pullrequest) to learn how to check out the Pull Request locally in order to test it.\n\n${expectations}`,
+        .join(" ")} you might want to have a look.\\n\\nYou can use [this guide](https://developers.raycast.com/basics/review-pullrequest) to learn how to check out the Pull Request locally in order to test it.\\n\\n${expectations}`,
     });
 
     return;
@@ -245,7 +309,6 @@ This is especially helpful since there were no maintainers for this extension :p
 
 async function getCodeOwners({ github, context }: Pick<API, "github" | "context">) {
   const codeowners = await getGitHubFile(".github/CODEOWNERS", { github, context });
-
   const regex = /(\/extensions\/[\w-]+) +(.*)/g;
   const matches = codeowners.matchAll(regex);
 
@@ -292,14 +355,12 @@ async function checkForAiInPullRequestDiff(
   for (const file of files) {
     const filePath = file.filename;
 
-    // we only care about files in the extension folder
     if (!filePath.startsWith(`extensions/${extensionFolder}/`)) {
       continue;
     }
 
     if (filePath === `extensions/${extensionFolder}/package.json`) {
       try {
-        // because it's a new extension, we need to get the content from the PR itself
         if (file.status === "added" || file.status === "modified") {
           const { data: content } = await github.rest.repos.getContent({
             mediaType: {
@@ -312,7 +373,6 @@ async function checkForAiInPullRequestDiff(
           });
 
           const packageJsonObj = JSON.parse(content as unknown as string);
-
           aiFilesOrToolsExist = !!packageJsonObj.tools;
         }
       } catch {
@@ -322,7 +382,6 @@ async function checkForAiInPullRequestDiff(
 
     if (file.status === "added" || file.status === "modified") {
       const aiFiles = ["ai.json", "ai.yaml", "ai.json5"];
-
       if (aiFiles.some((filename) => filePath === `extensions/${extensionFolder}/${filename}`)) {
         aiFilesOrToolsExist = true;
       }
@@ -345,14 +404,12 @@ async function getPlatformsFromPullRequestDiff(
   for (const file of files) {
     const filePath = file.filename;
 
-    // we only care about files in the extension folder
     if (!filePath.startsWith(`extensions/${extensionFolder}/`)) {
       continue;
     }
 
     if (filePath === `extensions/${extensionFolder}/package.json`) {
       try {
-        // Check if package.json is added or modified in the PR
         if (file.status === "added" || file.status === "modified") {
           const { data: content } = await github.rest.repos.getContent({
             mediaType: {
@@ -376,85 +433,16 @@ async function getPlatformsFromPullRequestDiff(
     }
   }
 
-  // Return empty array if no platforms found in PR diff
   return [];
 }
 
-async function addPlatformLabels(
-  platforms: string[],
-  { github, context }: Pick<API, "github" | "context">
-) {
-  // First, get all current labels on the PR
-  const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
-    owner: context.repo.owner,
-    repo: context.repo.repo,
-    issue_number: context.issue.number,
-  });
-
-  // Find existing platform labels
-  const existingPlatformLabels = currentLabels
-    .filter(label => label.name.startsWith('platform: '))
-    .map(label => label.name);
-
-  // Create the new platform labels we want to add
-  const newPlatformLabels = platforms.map(platform => `platform: ${platform}`);
-
-  // Find labels to remove (existing ones not in new list)
-  const labelsToRemove = existingPlatformLabels.filter(
-    existingLabel => !newPlatformLabels.includes(existingLabel)
-  );
-
-  // Find labels to add (new ones not in existing list)
-  const labelsToAdd = newPlatformLabels.filter(
-    newLabel => !existingPlatformLabels.includes(newLabel)
-  );
-
-  // Remove labels that are no longer needed
-  for (const labelToRemove of labelsToRemove) {
-    try {
-      await github.rest.issues.removeLabel({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        issue_number: context.issue.number,
-        name: labelToRemove,
-      });
-      console.log(`Removed platform label: ${labelToRemove}`);
-    } catch (error) {
-      console.error(`Failed to remove platform label ${labelToRemove}:`, error);
-    }
-  }
-
-  // Add only the new labels that don't already exist
-  if (labelsToAdd.length > 0) {
-    try {
-      await github.rest.issues.addLabels({
-        issue_number: context.issue.number,
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        labels: labelsToAdd,
-      });
-      console.log(`Added platform labels: ${labelsToAdd.join(", ")}`);
-    } catch (error) {
-      console.error(`Failed to add platform labels:`, error);
-    }
-  }
-
-  // Log summary of changes
-  if (labelsToRemove.length === 0 && labelsToAdd.length === 0) {
-    console.log(`No platform label changes needed. Current labels: ${existingPlatformLabels.join(", ")}`);
-  }
-}
-
-// Create a new comment or update the existing one
 async function comment({ github, context, comment: commentText }: Pick<API, "github" | "context"> & { comment: string }) {
-  // Get the existing comments on the PR
   const { data: comments } = await github.rest.issues.listComments({
     owner: context.repo.owner,
     repo: context.repo.repo,
     issue_number: context.issue.number,
   });
 
-  // Find any comment already made by the bot
   const botComment = comments.find((comment) => comment.user?.login === "raycastbot");
 
   if (botComment) {
@@ -476,7 +464,6 @@ async function comment({ github, context, comment: commentText }: Pick<API, "git
 
 async function extensionLabel(extensionFolder: string, api: Pick<API, "github" | "context">) {
   const extensionName2Folder = await getExtensionName2Folder(api);
-
   const extension = Object.values(extensionName2Folder).find(([name, folder]) => folder === extensionFolder)?.[0];
 
   let label;
