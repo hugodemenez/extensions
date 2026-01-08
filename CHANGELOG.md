@@ -1,5 +1,11 @@
 # Spotify Player Changelog
 
+## [Fix Queue Fallback for Generate Playlist] - {PR_MERGE_DATE}
+
+- Added "Play Playlist" option to immediately start playing a generated playlist without saving it to your library
+- Fixed "Add Songs to Queue" in Generate Playlist failing when no active player exists
+- When there's no active Spotify session, the first track now plays directly to initialize playback, then remaining tracks are added to the queue
+
 ## [Minor Fixes] - 2026-01-06
 
 - Fixed error toast "Menu Bar Player must be activated" when using Next/Previous in Now Playing without the Menu Bar Player command enabled
