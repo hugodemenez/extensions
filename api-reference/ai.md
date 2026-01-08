@@ -221,4 +221,4 @@ If a model isn't available to the user (or has been disabled by the user), Rayca
 | :--- | :--- | :--- |
 | creativity | Concrete tasks, such as fixing grammar, require less creativity while open-ended questions, such as generating ideas, require more.  If a number is passed, it needs to be in the range 0-2. For larger values, 2 will be used. For lower values, 0 will be used. | <code>[AI.Creativity](ai.md#ai.creativity)</code> |
 | model | The AI model to use to answer to the prompt. | <code>[AI.Model](ai.md#ai.model)</code> |
-| signal | Abort signal to cancel the request. | <code>[Date](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal)</code> |
+| signal | Abort signal to cancel the request. | <code>[AbortSignal](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal)</code> |
