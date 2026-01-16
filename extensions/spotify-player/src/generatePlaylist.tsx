@@ -1,8 +1,7 @@
-import { AI, Action, ActionPanel, Icon, LaunchProps, List, Toast, showToast, useNavigation } from "@raycast/api";
+import { Action, ActionPanel, Icon, LaunchProps, List, Toast, showToast } from "@raycast/api";
 import { showFailureToast, usePromise } from "@raycast/utils";
 import retry from "async-retry";
 import { useEffect, useMemo, useState } from "react";
-import { searchTracks } from "./api/searchTracks";
 import { View } from "./components/View";
 import TrackListItem from "./components/TrackListItem";
 import { createPlaylist } from "./api/createPlaylist";
@@ -11,147 +10,13 @@ import { play } from "./api/play";
 import { addToQueue } from "./api/addTrackToQueue";
 import { skipToNext } from "./api/skipToNext";
 import { TrackObject } from "./helpers/spotify.api";
-
-type Playlist = {
-  name: string;
-  description: string;
-  tracks: TrackObject[];
-  prompt: string;
-};
+import { generatePlaylistFromPrompt, Playlist } from "./helpers/generatePlaylistFromPrompt";
+import { TuneHistoryList } from "./components/TuneHistoryList";
 
 type ErrorState = {
   message: string;
   failedPrompt: string;
 };
-
-async function resolveTracksOnSpotify(aiTracks: TrackObject[]): Promise<TrackObject[]> {
-  const tracks = await Promise.all(
-    aiTracks.map(async (song) => {
-      try {
-        let response = await searchTracks(`track:${song.name} artist:${song.artists}`, 1);
-        let track = response?.items?.[0];
-        if (track) {
-          console.log(`Found on Spotify: "${track.name}" by ${track.artists?.map((a) => a.name).join(", ")}`);
-          return track;
-        }
-      } catch (error) {
-        console.error(error);
-      }
-      console.log(`Didn't find "${song.name}" by ${song.artists} on Spotify`);
-      return null;
-    }),
-  );
-
-  // Check if any tracks were found on Spotify
-  const validTracks = tracks.filter((t) => t !== null);
-  if (validTracks.length === 0) {
-    throw new Error("None of the suggested songs could be found on Spotify. Please try a different prompt.");
-  }
-
-  return validTracks;
-}
-
-function cleanAIResponse(data: string): string {
-  let jsonString = data;
-
-  // Remove markdown code blocks if present
-  const codeBlockMatch = data.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    jsonString = codeBlockMatch[1].trim();
-  }
-
-  // Try to extract JSON object starting with { and ending with }
-  const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("No JSON object found in AI response");
-  }
-
-  jsonString = jsonMatch[0];
-
-  // Clean up common issues in AI-generated JSON
-  // Fix trailing commas before } or ]
-  jsonString = jsonString.replace(/,\s*([}\]])/g, "$1");
-
-  return jsonString;
-}
-
-async function generatePlaylistFromPrompt(userPrompt: string, tune?: string, history?: Playlist[]): Promise<Playlist> {
-  const prompt = tune
-    ? `Previous playlist: [${history?.map((playlist) => `"${playlist.prompt}"`).join(", ")}]. Modify with: "${tune}"`
-    : userPrompt;
-
-  const answer = AI.ask(
-    `Find 20 spotify tracks based on "${prompt}". Return ONLY minified JSON:
-{"name": "<Playlist name>", "description": "<Description>", "tracks": [{"name": "<Exact Spotify song title>", "artists": "<Artists>"}]}
-Use exact Spotify song/artist names. No markdown, no explanation.`,
-    { model: AI.Model["Perplexity_Sonar"] },
-  );
-
-  await showToast({
-    style: Toast.Style.Animated,
-    title: tune ? "Tuning playlist with AI..." : "Generating playlist with AI...",
-  });
-  const data = await answer;
-  const jsonString = cleanAIResponse(data);
-  const playlist = JSON.parse(jsonString);
-  playlist.prompt = userPrompt;
-  console.log("AI Playlist Response:", JSON.stringify(playlist));
-  const spotifyTracks = await resolveTracksOnSpotify(playlist.tracks);
-
-  await showToast({
-    style: Toast.Style.Success,
-    title: tune ? "Playlist tuned" : "Playlist generated",
-    message: `"${playlist.name}" - ${spotifyTracks.filter(Boolean).length} songs`,
-  });
-
-  return {
-    name: playlist.name,
-    description: playlist.description,
-    tracks: spotifyTracks,
-    prompt: userPrompt,
-  };
-}
-
-function TuneHistoryList({
-  history,
-  currentPlaylist,
-  onSelect,
-}: {
-  history: Playlist[];
-  currentPlaylist: Playlist | null;
-  onSelect: (index: number) => void;
-}) {
-  const { pop } = useNavigation();
-  const currentIndex = currentPlaylist ? history.indexOf(currentPlaylist) : -1;
-
-  return (
-    <List navigationTitle="Tune History">
-      {history.map((version, index) => (
-        <List.Item
-          key={index}
-          icon={index === currentIndex ? Icon.CheckCircle : Icon.Circle}
-          title={version.name}
-          subtitle={version.prompt}
-          accessories={[
-            { text: `${version.tracks.filter(Boolean).length} songs` },
-            ...(index === currentIndex ? [{ tag: "Current" }] : []),
-          ]}
-          actions={
-            <ActionPanel>
-              <Action
-                title="Jump to Version"
-                onAction={() => {
-                  onSelect(index);
-                  pop();
-                }}
-              />
-            </ActionPanel>
-          }
-        />
-      ))}
-    </List>
-  );
-}
 
 export default function Command(props: LaunchProps<{ arguments: Arguments.GeneratePlaylist }>) {
   const [searchText, setSearchText] = useState("");
@@ -340,6 +205,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
             );
             startedPlayback = true;
             // Wait for playback to initialize before adding more tracks to queue
+            // TODO: We might want to wait for the track to start playing instead of a fixed delay
             await new Promise((resolve) => setTimeout(resolve, 1000));
           } else {
             throw err;
