@@ -1,7 +1,7 @@
 import { AI, Action, ActionPanel, Icon, LaunchProps, List, Toast, showToast, useNavigation } from "@raycast/api";
 import { showFailureToast, usePromise } from "@raycast/utils";
 import retry from "async-retry";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { searchTracks } from "./api/searchTracks";
 import { View } from "./components/View";
 import TrackListItem from "./components/TrackListItem";
@@ -10,18 +10,12 @@ import { addToPlaylist } from "./api/addToPlaylist";
 import { play } from "./api/play";
 import { addToQueue } from "./api/addTrackToQueue";
 import { skipToNext } from "./api/skipToNext";
-import { SimplifiedTrackObject } from "./helpers/spotify.api";
+import { TrackObject } from "./helpers/spotify.api";
 
-type AiPlaylist = {
+type Playlist = {
   name: string;
   description: string;
-  tracks: { title: string; artist: string }[];
-};
-
-type PlaylistVersion = {
-  name: string;
-  description: string;
-  tracks: (SimplifiedTrackObject | null | undefined)[];
+  tracks: TrackObject[];
   prompt: string;
 };
 
@@ -30,52 +24,20 @@ type ErrorState = {
   failedPrompt: string;
 };
 
-function getErrorMessage(error: unknown): string {
-  const errorString = error instanceof Error ? error.message : String(error);
-
-  // Check for common service errors
-  if (errorString.includes("503") || errorString.includes("heroku") || errorString.includes("Service Unavailable")) {
-    return "AI service is temporarily unavailable. Please try again in a few moments.";
-  }
-
-  if (errorString.includes("Failed to parse AI response") || errorString.includes("No JSON object found")) {
-    return "AI returned an invalid response. Please try again.";
-  }
-
-  if (errorString.includes("rate limit") || errorString.includes("429")) {
-    return "Too many requests. Please wait a moment and try again.";
-  }
-
-  if (errorString.includes("contains no songs") || errorString.includes("could be found on Spotify")) {
-    return "AI didn't return any valid songs. Please try a different prompt.";
-  }
-
-  return errorString;
-}
-
-async function resolveTracksOnSpotify(
-  aiTracks: { title: string; artist: string }[],
-): Promise<(SimplifiedTrackObject | null)[]> {
+async function resolveTracksOnSpotify(aiTracks: TrackObject[]): Promise<TrackObject[]> {
   const tracks = await Promise.all(
     aiTracks.map(async (song) => {
       try {
-        // First try strict search with track: and artist: filters
-        let response = await searchTracks(`track:${song.title} artist:${song.artist}`, 1);
+        let response = await searchTracks(`track:${song.name} artist:${song.artists}`, 1);
         let track = response?.items?.[0];
         if (track) {
-          return track;
-        }
-
-        // Fallback: try a more lenient search without filters
-        // This helps when AI gives slightly wrong song/artist names
-        response = await searchTracks(`${song.title} ${song.artist}`, 1);
-        track = response?.items?.[0];
-        if (track) {
+          console.log(`Found on Spotify: "${track.name}" by ${track.artists?.map((a) => a.name).join(", ")}`);
           return track;
         }
       } catch (error) {
         console.error(error);
       }
+      console.log(`Didn't find "${song.name}" by ${song.artists} on Spotify`);
       return null;
     }),
   );
@@ -86,12 +48,10 @@ async function resolveTracksOnSpotify(
     throw new Error("None of the suggested songs could be found on Spotify. Please try a different prompt.");
   }
 
-  return tracks;
+  return validTracks;
 }
 
-function parseAiPlaylistResponse(data: string): AiPlaylist {
-  // Try to find JSON object in the response
-  // First, try to find a JSON block (possibly wrapped in markdown code blocks)
+function cleanAIResponse(data: string): string {
   let jsonString = data;
 
   // Remove markdown code blocks if present
@@ -112,58 +72,57 @@ function parseAiPlaylistResponse(data: string): AiPlaylist {
   // Fix trailing commas before } or ]
   jsonString = jsonString.replace(/,\s*([}\]])/g, "$1");
 
-  // Fix unescaped quotes within strings (try to be conservative)
-  // This is tricky - we'll attempt to parse and if it fails, try more aggressive fixes
-
-  let playlist: AiPlaylist;
-
-  try {
-    playlist = JSON.parse(jsonString) as AiPlaylist;
-  } catch (error) {
-    // Log the problematic JSON for debugging
-    console.error("Failed to parse AI response:", jsonString.substring(0, 500));
-    throw new Error(`Failed to parse AI response: ${error instanceof Error ? error.message : "Invalid JSON"}`);
-  }
-
-  // Validate that the playlist has tracks
-  if (!playlist.tracks || !Array.isArray(playlist.tracks) || playlist.tracks.length === 0) {
-    throw new Error("AI response contains no songs. Please try again with a different prompt.");
-  }
-
-  return playlist;
+  return jsonString;
 }
 
-async function generatePlaylistFromPrompt(prompt: string): Promise<PlaylistVersion> {
-  const data = await AI.ask(
-    `Generate a playlist of 10-25 songs based on "${prompt}". Use ONLY listed artists if mentioned, otherwise infer culturally relevant songs with high specificity. Return ONLY minified JSON:
+async function generatePlaylistFromPrompt(userPrompt: string, tune?: string, history?: Playlist[]): Promise<Playlist> {
+  const prompt = tune
+    ? `Previous playlist: [${history?.map((playlist) => `"${playlist.prompt}"`).join(", ")}]. Modify with: "${tune}"`
+    : userPrompt;
 
-{"name": "<Playlist name>", "description": "<Description>", "tracks": [{"title": "<Exact Spotify song title>", "artist": "<Primary artist>"}]}
-
+  const answer = AI.ask(
+    `Find 20 spotify tracks based on "${prompt}". Return ONLY minified JSON:
+{"name": "<Playlist name>", "description": "<Description>", "tracks": [{"name": "<Exact Spotify song title>", "artists": "<Artists>"}]}
 Use exact Spotify song/artist names. No markdown, no explanation.`,
-    { model: AI.Model["OpenAI_GPT-5_mini"] },
+    { model: AI.Model["Perplexity_Sonar"] },
   );
 
-  const aiPlaylist = parseAiPlaylistResponse(data);
-  const spotifyTracks = await resolveTracksOnSpotify(aiPlaylist.tracks);
+  await showToast({
+    style: Toast.Style.Animated,
+    title: tune ? "Tuning playlist with AI..." : "Generating playlist with AI...",
+  });
+  const data = await answer;
+  const jsonString = cleanAIResponse(data);
+  const playlist = JSON.parse(jsonString);
+  playlist.prompt = userPrompt;
+  console.log("AI Playlist Response:", JSON.stringify(playlist));
+  const spotifyTracks = await resolveTracksOnSpotify(playlist.tracks);
+
+  await showToast({
+    style: Toast.Style.Success,
+    title: tune ? "Playlist tuned" : "Playlist generated",
+    message: `"${playlist.name}" - ${spotifyTracks.filter(Boolean).length} songs`,
+  });
 
   return {
-    name: aiPlaylist.name,
-    description: aiPlaylist.description,
+    name: playlist.name,
+    description: playlist.description,
     tracks: spotifyTracks,
-    prompt: prompt,
+    prompt: userPrompt,
   };
 }
 
 function TuneHistoryList({
   history,
-  currentIndex,
+  currentPlaylist,
   onSelect,
 }: {
-  history: PlaylistVersion[];
-  currentIndex: number;
+  history: Playlist[];
+  currentPlaylist: Playlist | null;
   onSelect: (index: number) => void;
 }) {
   const { pop } = useNavigation();
+  const currentIndex = currentPlaylist ? history.indexOf(currentPlaylist) : -1;
 
   return (
     <List navigationTitle="Tune History">
@@ -195,15 +154,11 @@ function TuneHistoryList({
 }
 
 export default function Command(props: LaunchProps<{ arguments: Arguments.GeneratePlaylist }>) {
-  const [history, setHistory] = useState<PlaylistVersion[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [tuneError, setTuneError] = useState<ErrorState | null>(null);
   const [isTuning, setIsTuning] = useState(false);
-  const [historyInitialized, setHistoryInitialized] = useState(false);
 
   // Use usePromise for initial playlist generation (handles React Strict Mode correctly)
-  // Empty dependency array ensures this only runs once on mount
   const {
     data: initialPlaylist,
     isLoading: isInitialLoading,
@@ -212,76 +167,48 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
   } = usePromise(
     async () => {
       const prompt = props.arguments.description;
-      return await generatePlaylistFromPrompt(prompt);
+      const initialPlaylist = await generatePlaylistFromPrompt(prompt);
+      return initialPlaylist;
     },
     [],
     {
       onError: (err) => {
-        showFailureToast(getErrorMessage(err), { title: "Could not generate playlist" });
+        showFailureToast(err.message, { title: "Could not generate playlist" });
       },
     },
   );
+  const [history, setHistory] = useState<Playlist[]>([]);
+  const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
+  const currentIndex = useMemo(() => {
+    if (!currentPlaylist) return -1;
+    return history.indexOf(currentPlaylist);
+  }, [history, currentPlaylist]);
 
-  // Initialize history when initialPlaylist becomes available (only once)
   useEffect(() => {
-    if (initialPlaylist && !historyInitialized) {
+    if (initialPlaylist) {
       setHistory([initialPlaylist]);
-      setCurrentIndex(0);
-      setHistoryInitialized(true);
+      setCurrentPlaylist(initialPlaylist);
     }
-  }, [initialPlaylist, historyInitialized]);
+  }, [initialPlaylist]);
 
-  const currentPlaylist = history[currentIndex];
-  const canRevert = currentIndex > 0;
-  const canRedo = currentIndex < history.length - 1;
   const isLoading = isInitialLoading || isTuning;
 
   async function tunePlaylist(prompt: string) {
     if (!prompt.trim()) return;
     if (!currentPlaylist) return;
+    if (prompt.trim().toLowerCase() === currentPlaylist.prompt.trim().toLowerCase()) return;
 
     try {
       setIsTuning(true);
       setTuneError(null);
 
-      const currentTracksContext = currentPlaylist.tracks
-        .filter(Boolean)
-        .map((t) => `"${t!.name}" - ${t!.artists?.map((a) => a.name).join(", ")}`)
-        .join(", ");
-
-      const aiPrompt = `Current playlist: [${currentTracksContext}]
-
-Modify with: "${prompt}"
-
-Return 10-25 songs as minified JSON only:
-{"name": "<Name>", "description": "<Desc>", "tracks": [{"title": "<Exact Spotify title>", "artist": "<Primary artist>"}]}`;
-
-      await showToast({ style: Toast.Style.Animated, title: "Tuning playlist with AI..." });
-
-      const data = await AI.ask(aiPrompt, { model: AI.Model["OpenAI_GPT4o-mini"] });
-      const aiPlaylist = parseAiPlaylistResponse(data);
-      const spotifyTracks = await resolveTracksOnSpotify(aiPlaylist.tracks);
-
-      const newVersion: PlaylistVersion = {
-        name: aiPlaylist.name,
-        description: aiPlaylist.description,
-        tracks: spotifyTracks,
-        prompt: prompt,
-      };
-
-      // Truncate future history if we've reverted, then add new version
-      setHistory((prev) => [...prev.slice(0, currentIndex + 1), newVersion]);
-      setCurrentIndex((prev) => prev + 1);
-      setSearchText("");
-      setTuneError(null);
-
-      await showToast({
-        style: Toast.Style.Success,
-        title: "Playlist tuned",
-        message: `"${aiPlaylist.name}" - ${spotifyTracks.filter(Boolean).length} songs`,
+      const playlist = await generatePlaylistFromPrompt(prompt, prompt, history);
+      setHistory((prevHistory) => {
+        return [...prevHistory, playlist];
       });
+      setCurrentPlaylist(playlist);
     } catch (err) {
-      const errorMessage = getErrorMessage(err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
       setTuneError({
         message: errorMessage,
         failedPrompt: prompt,
@@ -294,16 +221,15 @@ Return 10-25 songs as minified JSON only:
   }
 
   function revertToPrevious() {
-    if (canRevert) {
-      setCurrentIndex((prev) => prev - 1);
-      setTuneError(null);
+    if (currentIndex > 0) {
+      setCurrentPlaylist(history[currentIndex - 1]);
       showToast({ style: Toast.Style.Success, title: "Reverted to previous version" });
     }
   }
 
   function redoNext() {
-    if (canRedo) {
-      setCurrentIndex((prev) => prev + 1);
+    if (currentIndex < history.length - 1) {
+      setCurrentPlaylist(history[currentIndex + 1]);
       setTuneError(null);
       showToast({ style: Toast.Style.Success, title: "Restored next version" });
     }
@@ -311,7 +237,7 @@ Return 10-25 songs as minified JSON only:
 
   function jumpToVersion(index: number) {
     if (index >= 0 && index < history.length) {
-      setCurrentIndex(index);
+      setCurrentPlaylist(history[index]);
       setTuneError(null);
       showToast({ style: Toast.Style.Success, title: `Jumped to version ${index + 1}` });
     }
@@ -326,7 +252,7 @@ Return 10-25 songs as minified JSON only:
         description: currentPlaylist.description,
       });
       if (spotifyPlaylist?.id) {
-        const trackUris = (tracks?.map((track) => track?.uri).filter(Boolean) as string[]) ?? [];
+        const trackUris = (currentPlaylist.tracks?.map((track) => track?.uri).filter(Boolean) as string[]) ?? [];
         await addToPlaylist({ playlistId: spotifyPlaylist.id, trackUris: trackUris });
         await showToast({
           style: Toast.Style.Success,
@@ -347,15 +273,15 @@ Return 10-25 songs as minified JSON only:
 
   async function playPlaylist() {
     if (!currentPlaylist) return;
-    if (!tracks || tracks.length === 0) return;
+    if (!currentPlaylist.tracks || currentPlaylist.tracks.length === 0) return;
 
     try {
       await showToast({ style: Toast.Style.Animated, title: "Starting playlist" });
 
       // Get all valid track URIs
-      const trackUris = tracks
-        .filter((track): track is NonNullable<typeof track> => track != null && track.uri != null)
-        .map((track) => track.uri as string);
+      const trackUris = currentPlaylist.tracks
+        .filter((track: TrackObject): track is NonNullable<typeof track> => track != null && track.uri != null)
+        .map((track: TrackObject) => track.uri as string);
 
       if (trackUris.length === 0) {
         throw new Error("No valid tracks found");
@@ -382,7 +308,7 @@ Return 10-25 songs as minified JSON only:
 
   async function addSongsToQueue() {
     if (!currentPlaylist) return;
-    if (!tracks || tracks.length === 0) return;
+    if (!currentPlaylist.tracks || currentPlaylist.tracks.length === 0) return;
 
     try {
       await showToast({ style: Toast.Style.Animated, title: "Adding songs to queue" });
@@ -390,7 +316,7 @@ Return 10-25 songs as minified JSON only:
       let startedPlayback = false;
 
       // Using Promise.all could improve performance here, but it would disrupt the order of songs in the queue.
-      for (const track of tracks) {
+      for (const track of currentPlaylist.tracks) {
         if (!track || !track.uri) continue;
 
         try {
@@ -439,21 +365,10 @@ Return 10-25 songs as minified JSON only:
     }
   }
 
-  // The AI might return duplicate songs, so we need to filter them out by track ID
-  const tracks =
-    currentPlaylist?.tracks?.filter(
-      (track, index, arr) => track && arr.findIndex((t) => t?.id === track.id) === index,
-    ) ?? [];
-  const hasPlaylist = tracks && tracks.length > 0;
-  const hasError = initialError || tuneError;
-
   // Determine placeholder text based on state
   const getPlaceholder = () => {
     if (isLoading) {
       return history.length === 0 ? "Generating playlist..." : "Tuning playlist...";
-    }
-    if (hasError) {
-      return "Edit prompt and press Enter to retry";
     }
     return "Search songs or enter a prompt to tune";
   };
@@ -472,7 +387,7 @@ Return 10-25 songs as minified JSON only:
             <List.Item
               icon={Icon.ExclamationMark}
               title="Error"
-              subtitle={getErrorMessage(initialError)}
+              subtitle={initialError.message}
               accessories={[{ tag: { value: "Failed", color: "#FF6B6B" } }]}
             />
             <List.Item
@@ -528,7 +443,7 @@ Return 10-25 songs as minified JSON only:
         )}
 
         {/* Normal playlist UI - only show when no error */}
-        {hasPlaylist && !hasError && (
+        {currentPlaylist && (
           <>
             <List.Item
               icon={Icon.Wand}
@@ -571,7 +486,7 @@ Return 10-25 songs as minified JSON only:
               }
             />
 
-            {canRevert && (
+            {currentIndex > 0 && (
               <List.Item
                 icon={Icon.ArrowCounterClockwise}
                 title="Revert to Previous Version"
@@ -584,7 +499,7 @@ Return 10-25 songs as minified JSON only:
               />
             )}
 
-            {canRedo && (
+            {currentIndex < history.length - 1 && (
               <List.Item
                 icon={Icon.ArrowClockwise}
                 title="Redo Next Version"
@@ -608,7 +523,7 @@ Return 10-25 songs as minified JSON only:
                       title="View History"
                       icon={Icon.Clock}
                       target={
-                        <TuneHistoryList history={history} currentIndex={currentIndex} onSelect={jumpToVersion} />
+                        <TuneHistoryList history={history} currentPlaylist={currentPlaylist} onSelect={jumpToVersion} />
                       }
                     />
                   </ActionPanel>
@@ -619,11 +534,11 @@ Return 10-25 songs as minified JSON only:
         )}
 
         {/* Track list - show even during tuning error if we have tracks */}
-        {tracks && tracks.length > 0 && (
+        {currentPlaylist?.tracks && (
           <List.Section title={tuneError ? `Previous: ${currentPlaylist?.name}` : currentPlaylist?.name}>
-            {tracks.map((track, index) => {
+            {currentPlaylist.tracks.map((track) => {
               if (!track) return null;
-              return <TrackListItem key={`${track.id}-${index}`} track={track} album={track.album} showGoToAlbum />;
+              return <TrackListItem key={`${track.id}`} track={track} album={track.album} showGoToAlbum />;
             })}
           </List.Section>
         )}
