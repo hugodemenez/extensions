@@ -20,14 +20,13 @@ type ErrorState = {
 
 export default function Command(props: LaunchProps<{ arguments: Arguments.GeneratePlaylist }>) {
   const [searchText, setSearchText] = useState("");
-  const [tuneError, setTuneError] = useState<ErrorState | null>(null);
+  const [generationError, setGenerationError] = useState<ErrorState | null>(null);
   const [isTuning, setIsTuning] = useState(false);
 
   // Use usePromise for initial playlist generation (handles React Strict Mode correctly)
   const {
     data: initialPlaylist,
     isLoading: isInitialLoading,
-    error: initialError,
     revalidate,
   } = usePromise(
     async () => {
@@ -38,7 +37,10 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
     [],
     {
       onError: (err) => {
+        const prompt = props.arguments.description;
         showFailureToast(err.message, { title: "Could not generate playlist" });
+        setGenerationError({ message: err.message, failedPrompt: prompt });
+        setSearchText(prompt);
       },
     },
   );
@@ -53,6 +55,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
     if (initialPlaylist) {
       setHistory([initialPlaylist]);
       setCurrentPlaylist(initialPlaylist);
+      setGenerationError(null);
     }
   }, [initialPlaylist]);
 
@@ -65,7 +68,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
 
     try {
       setIsTuning(true);
-      setTuneError(null);
+      setGenerationError(null);
 
       const playlist = await generatePlaylistFromPrompt(prompt, prompt, history);
       setHistory((prevHistory) => {
@@ -74,7 +77,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
       setCurrentPlaylist(playlist);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      setTuneError({
+      setGenerationError({
         message: errorMessage,
         failedPrompt: prompt,
       });
@@ -95,7 +98,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
   function redoNext() {
     if (currentIndex < history.length - 1) {
       setCurrentPlaylist(history[currentIndex + 1]);
-      setTuneError(null);
+      setGenerationError(null);
       showToast({ style: Toast.Style.Success, title: "Restored next version" });
     }
   }
@@ -103,7 +106,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
   function jumpToVersion(index: number) {
     if (index >= 0 && index < history.length) {
       setCurrentPlaylist(history[index]);
-      setTuneError(null);
+      setGenerationError(null);
       showToast({ style: Toast.Style.Success, title: `Jumped to version ${index + 1}` });
     }
   }
@@ -247,70 +250,59 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         onSearchTextChange={setSearchText}
         searchBarPlaceholder={getPlaceholder()}
       >
-        {/* Initial generation error state */}
-        {initialError && !isLoading && (
-          <>
+        {/* Generation error state */}
+        {generationError && !isLoading && (
+          <List.Section title="Error">
             <List.Item
               icon={Icon.ExclamationMark}
-              title="Error"
-              subtitle={initialError.message}
-              accessories={[{ tag: { value: "Failed", color: "#FF6B6B" } }]}
-            />
-            <List.Item
-              icon={Icon.RotateClockwise}
-              title="Retry"
-              subtitle="Press Enter to retry generating the playlist"
-              actions={
-                <ActionPanel>
-                  <Action title="Retry" icon={Icon.RotateClockwise} onAction={() => revalidate()} />
-                </ActionPanel>
-              }
-            />
-          </>
-        )}
-
-        {/* Tuning error state */}
-        {tuneError && !isLoading && (
-          <>
-            <List.Item
-              icon={Icon.ExclamationMark}
-              title="Tuning Error"
-              subtitle={tuneError.message}
+              title="Generation Error"
+              subtitle={generationError.message}
               accessories={[{ tag: { value: "Failed", color: "#FF6B6B" } }]}
             />
             <List.Item
               icon={Icon.RotateClockwise}
               title={searchText ? `Retry: "${searchText}"` : "Retry"}
-              subtitle={searchText ? "Press Enter to retry" : "Edit the prompt above and press Enter"}
+              subtitle={searchText ? "Press Enter to retry" : "Press Enter to retry"}
               actions={
                 <ActionPanel>
                   <Action
                     title="Retry"
                     icon={Icon.RotateClockwise}
                     onAction={() => {
-                      const promptToUse = searchText.trim() || tuneError.failedPrompt;
+                      const promptToUse = searchText.trim() || generationError.failedPrompt;
+                      if (!currentPlaylist) {
+                        setGenerationError(null);
+                        revalidate();
+                        return;
+                      }
                       tunePlaylist(promptToUse);
                     }}
                   />
                 </ActionPanel>
               }
             />
-            <List.Item
-              icon={Icon.ArrowCounterClockwise}
-              title="Keep Previous Version"
-              subtitle={`Stay with "${currentPlaylist?.name}"`}
-              actions={
-                <ActionPanel>
-                  <Action title="Keep Previous" icon={Icon.ArrowCounterClockwise} onAction={() => setTuneError(null)} />
-                </ActionPanel>
-              }
-            />
-          </>
+            {currentPlaylist && (
+              <List.Item
+                icon={Icon.ArrowCounterClockwise}
+                title="Keep Previous Version"
+                subtitle={`Stay with "${currentPlaylist?.name}"`}
+                actions={
+                  <ActionPanel>
+                    <Action
+                      title="Keep Previous"
+                      icon={Icon.ArrowCounterClockwise}
+                      onAction={() => setGenerationError(null)}
+                    />
+                  </ActionPanel>
+                }
+              />
+            )}
+          </List.Section>
         )}
 
         {/* Normal playlist UI - only show when no error */}
-        {currentPlaylist && (
-          <>
+        {currentPlaylist && !generationError && (
+          <List.Section title="Actions">
             <List.Item
               icon={Icon.Wand}
               title={searchText ? `Tune: "${searchText}"` : "Tune Playlist"}
@@ -396,12 +388,12 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
                 }
               />
             )}
-          </>
+          </List.Section>
         )}
 
-        {/* Track list - show even during tuning error if we have tracks */}
+        {/* Track list - show even during generation error if we have tracks */}
         {currentPlaylist?.tracks && (
-          <List.Section title={tuneError ? `Previous: ${currentPlaylist?.name}` : currentPlaylist?.name}>
+          <List.Section title={generationError ? `Previous: ${currentPlaylist?.name}` : currentPlaylist?.name}>
             {currentPlaylist.tracks.map((track) => {
               if (!track) return null;
               return <TrackListItem key={`${track.id}`} track={track} album={track.album} showGoToAlbum />;
