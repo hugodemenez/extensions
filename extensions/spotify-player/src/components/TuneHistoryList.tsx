@@ -1,6 +1,6 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import { useNavigation } from "@raycast/api";
-import { Playlist } from "../helpers/generatePlaylistFromPrompt";
+import { Playlist } from "../generatePlaylist";
 
 type TuneHistoryListProps = {
   history: Playlist[];

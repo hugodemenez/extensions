@@ -1,4 +1,4 @@
-import { Action, ActionPanel, Icon, LaunchProps, List, Toast, showToast } from "@raycast/api";
+import { AI, Action, ActionPanel, Icon, LaunchProps, List, Toast, environment, showToast } from "@raycast/api";
 import { showFailureToast, usePromise } from "@raycast/utils";
 import retry from "async-retry";
 import { useEffect, useMemo, useState } from "react";
@@ -10,7 +10,7 @@ import { play } from "./api/play";
 import { addToQueue } from "./api/addTrackToQueue";
 import { skipToNext } from "./api/skipToNext";
 import { TrackObject } from "./helpers/spotify.api";
-import { generatePlaylistFromPrompt, Playlist } from "./helpers/generatePlaylistFromPrompt";
+import { generatePlaylistFromPrompt } from "./helpers/generatePlaylistFromPrompt";
 import { TuneHistoryList } from "./components/TuneHistoryList";
 
 type ErrorState = {
@@ -18,23 +18,43 @@ type ErrorState = {
   failedPrompt: string;
 };
 
+export type Playlist = {
+  name: string;
+  description: string;
+  tracks: TrackObject[];
+  prompt: string;
+};
+
 export default function Command(props: LaunchProps<{ arguments: Arguments.GeneratePlaylist }>) {
   const [searchText, setSearchText] = useState("");
   const [generationError, setGenerationError] = useState<ErrorState | null>(null);
-  const [isTuning, setIsTuning] = useState(false);
+  const [history, setHistory] = useState<Playlist[]>([]);
+  const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
+  const [tuningPrompt, setTuningPrompt] = useState("");
+  const [startGeneration, setStartGeneration] = useState(false);
 
   // Use usePromise for initial playlist generation (handles React Strict Mode correctly)
-  const {
-    data: initialPlaylist,
-    isLoading: isInitialLoading,
-    revalidate,
-  } = usePromise(
-    async () => {
-      const prompt = props.arguments.description;
-      const initialPlaylist = await generatePlaylistFromPrompt(prompt);
-      return initialPlaylist;
+  const { isLoading, revalidate } = usePromise(
+    async (tuningPrompt: string) => {
+      console.log("Starting playlist generation...");
+
+      if (!environment.canAccess(AI)) {
+        showFailureToast("You don't have access to Pro.", { title: "Cannot Generate Playlist" });
+        throw new Error("No AI access");
+      }
+
+      // If we have a tuning prompt, use it to tune the existing playlist
+      if (tuningPrompt.trim() !== "") {
+        console.log("Tuning playlist with prompt:", tuningPrompt);
+        return await generatePlaylistFromPrompt(tuningPrompt, history);
+      }
+
+      // If we don't have a tuning prompt, use the initial prompt from the arguments
+      const initialPrompt = props.arguments.description;
+      console.log("Generating playlist with prompt:", initialPrompt);
+      return await generatePlaylistFromPrompt(initialPrompt);
     },
-    [],
+    [tuningPrompt],
     {
       onError: (err) => {
         const prompt = props.arguments.description;
@@ -42,50 +62,32 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         setGenerationError({ message: err.message, failedPrompt: prompt });
         setSearchText(prompt);
       },
+      onData: (playlist) => {
+        if (!playlist) return;
+        setCurrentPlaylist(playlist);
+        setHistory((prev) => [...prev, playlist]);
+      },
+      execute: startGeneration,
     },
   );
-  const [history, setHistory] = useState<Playlist[]>([]);
-  const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
+
+  // Start generation on mount
+  useEffect(() => {
+    setStartGeneration(true);
+  }, []);
+
+  // Memorize current index in history
   const currentIndex = useMemo(() => {
     if (!currentPlaylist) return -1;
     return history.indexOf(currentPlaylist);
-  }, [history, currentPlaylist]);
-
-  useEffect(() => {
-    if (initialPlaylist) {
-      setHistory([initialPlaylist]);
-      setCurrentPlaylist(initialPlaylist);
-      setGenerationError(null);
-    }
-  }, [initialPlaylist]);
-
-  const isLoading = isInitialLoading || isTuning;
+  }, [currentPlaylist, history]);
 
   async function tunePlaylist(prompt: string) {
     if (!prompt.trim()) return;
     if (!currentPlaylist) return;
     if (prompt.trim().toLowerCase() === currentPlaylist.prompt.trim().toLowerCase()) return;
 
-    try {
-      setIsTuning(true);
-      setGenerationError(null);
-
-      const playlist = await generatePlaylistFromPrompt(prompt, prompt, history);
-      setHistory((prevHistory) => {
-        return [...prevHistory, playlist];
-      });
-      setCurrentPlaylist(playlist);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setGenerationError({
-        message: errorMessage,
-        failedPrompt: prompt,
-      });
-      setSearchText(prompt);
-      await showFailureToast(errorMessage, { title: "Could not tune playlist" });
-    } finally {
-      setIsTuning(false);
-    }
+    setTuningPrompt(prompt);
   }
 
   function revertToPrevious() {
@@ -155,6 +157,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         throw new Error("No valid tracks found");
       }
 
+      // There is a known issue when spotify just play the first track instead of the full list
       // Play all tracks at once using uris array (replaces current playback/queue)
       await retry(
         async () => {
@@ -272,6 +275,8 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
                       const promptToUse = searchText.trim() || generationError.failedPrompt;
                       if (!currentPlaylist) {
                         setGenerationError(null);
+                        // inside the Retry action, just before revalidate()
+                        console.log("[generatePlaylist] revalidate called from Retry");
                         revalidate();
                         return;
                       }

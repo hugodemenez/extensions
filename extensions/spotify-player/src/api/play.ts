@@ -113,9 +113,27 @@ export async function play({ id, type, contextUri, uris }: PlayProps = {}) {
 
 async function launchSpotifyAndPlay({ id, type, uris }: { id?: string; type?: ContextTypes; uris?: string[] }) {
   try {
-    // For uris array, play the first track to launch Spotify
+    // For uris array, launch Spotify and play those tracks using Web API
     if (uris && uris.length > 0) {
-      await runSpotifyScript(SpotifyScriptType.PlayTrack, false, uris[0]);
+      // We can start spotify by starting script pause
+      await runSpotifyScript(SpotifyScriptType.Pause, false);
+
+      // We assume spotify is started now, so we can start playback
+
+      // Initialize Spotify Web API client
+      const { spotifyClient } = getSpotifyClient();
+      const { devices } = await getMyDevices();
+      const activeDevice = devices?.find((device) => device.is_active);
+      const deviceId = activeDevice?.id ?? devices?.[0]?.id ?? undefined;
+
+      // Start playback using Web API
+      await spotifyClient.putMePlayerPlay(
+        { uris },
+        {
+          deviceId,
+        },
+      );
+
       return;
     }
 

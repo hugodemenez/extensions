@@ -1,46 +1,50 @@
 import { AI, Toast, showToast } from "@raycast/api";
-import { TrackObject } from "./spotify.api";
 import { cleanAIResponse } from "./cleanAIResponse";
 import { resolveTracksOnSpotify } from "./resolveTracksOnSpotify";
+import { Playlist } from "../generatePlaylist";
 
-export type Playlist = {
-  name: string;
-  description: string;
-  tracks: TrackObject[];
-  prompt: string;
-};
-
-export async function generatePlaylistFromPrompt(
-  userPrompt: string,
-  tune?: string,
-  history?: Playlist[],
-): Promise<Playlist> {
-  const prompt = tune
-    ? `Previous playlist: [${history?.map((playlist) => `"${playlist.prompt}"`).join(", ")}]. Modify with: "${tune}"`
+export async function generatePlaylistFromPrompt(userPrompt: string, history?: Playlist[]): Promise<Playlist> {
+  const promptWithContext = history
+    ? `Previous playlist: [${history?.map((playlist) => `"${playlist.prompt}"`).join(", ")}].
+Modify with: "${userPrompt}"`
     : userPrompt;
 
-  const answer = AI.ask(
-    `Find 20 spotify tracks based on "${prompt}". Return ONLY minified JSON:
-{"name": "<Playlist name>", "description": "<Description>", "tracks": [{"name": "<Exact Spotify song title>", "artists": "<Artists>"}]}
-Use exact Spotify song/artist names. No markdown, no explanation.`,
-    { model: AI.Model["Perplexity_Sonar"] },
-  );
+  const playlistSample = {
+    name: "Playlist Name",
+    description: "A brief description of the playlist.",
+    tracks: [
+      { name: "Song Title 1", artists: "Artist 1, Artist 2" },
+      { name: "Song Title 2", artists: "Artist 3" },
+    ],
+  };
+
+  const prompt = `You are a Playlist generator.
+Create a playlist of 10 songs based on user prompt: "${promptWithContext}".
+Return ONLY minified JSON:
+${JSON.stringify(playlistSample)}
+Use exact Spotify song/artist names. No markdown, no explanation.`;
+
+  const answer = AI.ask(prompt, { model: AI.Model["Perplexity_Sonar"] });
 
   await showToast({
     style: Toast.Style.Animated,
-    title: tune ? "Tuning playlist with AI..." : "Generating playlist with AI...",
+    title: history ? "Tuning playlist with AI..." : "Generating playlist with AI...",
   });
 
   const data = await answer;
+
+  // Clean AI response
   const jsonString = cleanAIResponse(data);
+
+  // Parse JSON string
   const playlist = JSON.parse(jsonString);
+
   playlist.prompt = userPrompt;
-  console.log("AI Playlist Response:", JSON.stringify(playlist));
   const spotifyTracks = await resolveTracksOnSpotify(playlist.tracks);
 
   await showToast({
     style: Toast.Style.Success,
-    title: tune ? "Playlist tuned" : "Playlist generated",
+    title: history ? "Playlist tuned" : "Playlist generated",
     message: `"${playlist.name}" - ${spotifyTracks.filter(Boolean).length} songs`,
   });
 
