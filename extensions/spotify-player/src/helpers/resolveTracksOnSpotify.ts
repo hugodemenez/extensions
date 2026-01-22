@@ -5,8 +5,8 @@ export async function resolveTracksOnSpotify(aiTracks: TrackObject[]): Promise<T
   const tracks = await Promise.all(
     aiTracks.map(async (song) => {
       try {
-        let response = await searchTracks(`track:${song.name} artist:${song.artists}`, 1);
-        let track = response?.items?.[0];
+        const response = await searchTracks(`track:${song.name} artist:${song.artists}`, 1);
+        const track = response?.items?.[0];
         if (track) {
           console.log(`Found on Spotify: "${track.name}" by ${track.artists?.map((a) => a.name).join(", ")}`);
           return track;

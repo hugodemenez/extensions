@@ -1,4 +1,4 @@
-import { AI, Action, ActionPanel, Icon, LaunchProps, List, LocalStorage, Toast, environment, showToast } from "@raycast/api";
+import { AI, Action, ActionPanel, Icon, LaunchProps, List, Toast, environment, showToast } from "@raycast/api";
 import { showFailureToast, useCachedState, usePromise } from "@raycast/utils";
 import retry from "async-retry";
 import { useEffect, useMemo, useState } from "react";
@@ -29,18 +29,19 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
   const [searchText, setSearchText] = useState("");
   const [generationError, setGenerationError] = useState<ErrorState | null>(null);
   const [history, setHistory] = useState<Playlist[]>([]);
-  const [historyArchiveById, setHistoryArchiveById] =
-    useCachedState<Record<string, Playlist[]>>("spotify-player-historyArchive", {});
+  const [historyArchiveById, setHistoryArchiveById] = useCachedState<Record<string, Playlist[]>>(
+    "spotify-player-historyArchive",
+    {},
+  );
 
   const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
   const [tuningPrompt, setTuningPrompt] = useState("");
-  const [startGeneration, setStartGeneration] = useState(props.arguments.description !== undefined);
 
   useEffect(() => {
     const id = history[0]?.name;
     console.log("updating history", id);
     if (!id) return;
-    setHistoryArchiveById(prev => ({ ...prev, [id]: history }));
+    setHistoryArchiveById((prev) => ({ ...prev, [id]: history }));
   }, [history, setHistoryArchiveById]);
 
   // Use usePromise for playlist generation
@@ -63,7 +64,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
       // If we don't have a tuning prompt, use the initial prompt from the arguments
       const initialPrompt = props.arguments.description;
       if (!initialPrompt) {
-        return
+        return;
       }
       console.log("Generating playlist with prompt:", initialPrompt);
       return await generatePlaylistFromPrompt(initialPrompt);
@@ -80,7 +81,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         setCurrentPlaylist(playlist);
         setHistory((prev) => [...prev, playlist]);
       },
-      execute: startGeneration,
+      execute: props.arguments.description !== undefined,
     },
   );
 
@@ -233,12 +234,12 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         title: startedPlayback ? "Started playing and added songs to queue" : "Added songs to queue",
         primaryAction: !startedPlayback
           ? {
-            title: "Play Next Song in Queue",
-            onAction: async () => {
-              await skipToNext();
-              await play();
-            },
-          }
+              title: "Play Next Song in Queue",
+              onAction: async () => {
+                await skipToNext();
+                await play();
+              },
+            }
           : undefined,
       });
     } catch (error) {
@@ -246,18 +247,16 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
     }
   }
 
-
   return (
     <View>
       <List
         isLoading={isLoading}
         searchText={searchText}
         onSearchTextChange={setSearchText}
-        searchBarPlaceholder={history.length === 0 ?
-          "Search songs or enter a prompt to generate"
-          : "Search songs or enter a prompt to tune"}
+        searchBarPlaceholder={
+          history.length === 0 ? "Search songs or enter a prompt to generate" : "Search songs or enter a prompt to tune"
+        }
       >
-
         {/* Generation error state */}
         {generationError && !isLoading && (
           <List.Section title="Error">
@@ -407,31 +406,39 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         {/* See previous generations */}
         {!props.arguments.description && (
           <List.Section title="Generation History">
-            {
-              Object.entries(historyArchiveById).map(([id, history]) => (
-                <List.Item key={id} title={id} subtitle={`${history.length} versions`}
-                  actions={
-                    <ActionPanel title={id}>
-                      <Action title="View Generation" icon={Icon.Clock} onAction={() => {
+            {Object.entries(historyArchiveById).map(([id, history]) => (
+              <List.Item
+                key={id}
+                title={id}
+                subtitle={`${history.length} versions`}
+                actions={
+                  <ActionPanel title={id}>
+                    <Action
+                      title="View Generation"
+                      icon={Icon.Clock}
+                      onAction={() => {
                         setCurrentPlaylist(history[0]);
                         setHistory(history);
-                      }} />
-                      <Action title="Delete Generation" icon={Icon.Trash} onAction={() => {
-                        setHistoryArchiveById(prev => {
+                      }}
+                    />
+                    <Action
+                      title="Delete Generation"
+                      icon={Icon.Trash}
+                      onAction={() => {
+                        setHistoryArchiveById((prev) => {
                           const newState = { ...prev };
                           delete newState[id];
                           return newState;
                         });
-                      }} />
-                    </ActionPanel>
-                  }
-                />
-              ))
-            }
+                      }}
+                    />
+                  </ActionPanel>
+                }
+              />
+            ))}
           </List.Section>
         )}
       </List>
-
     </View>
   );
 }

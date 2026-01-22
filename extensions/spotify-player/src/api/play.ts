@@ -53,8 +53,7 @@ export async function play({ id, type, contextUri, uris }: PlayProps = {}) {
           },
         );
         return;
-      }
-      else {
+      } else {
         return launchSpotifyAndPlay({ id, type });
       }
     }
