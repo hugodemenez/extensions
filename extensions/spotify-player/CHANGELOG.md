@@ -1,5 +1,14 @@
 # Spotify Player Changelog
 
+## [Generate Playlist: AI Tuning and Improved Playback] - {PR_MERGE_DATE}
+
+- Added AI tuning with history/undo
+- Changed argument to optional to access previous generation history
+- Added "Play Playlist" and improved playback reliability (URI arrays, auto-open Spotify, retries)
+- Upgraded AI model (with Sonar for better playlist content), prompt, and Spotify track matching
+- Improved error handling for AI outages, rate limits, and invalid responses
+- Fixed queueing when no active player exists
+
 ## [Fix] - 2026-01-14
 
 - Fixed error toast when Menu Bar Player command is disabled (handles "No enabled command" error)
