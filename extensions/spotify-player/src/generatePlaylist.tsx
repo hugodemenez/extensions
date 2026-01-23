@@ -38,8 +38,11 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
 
   useEffect(() => {
     const id = history[0]?.name;
-    console.log("updating history", id);
+    // If no id, do nothing it means no playlist generated yet
     if (!id) return;
+    const existingHistory = historyArchiveById[id];
+    // if the already registered history is the same as current, do nothing
+    if (existingHistory && existingHistory.length === history.length) return;
     setHistoryArchiveById((prev) => ({ ...prev, [id]: history }));
   }, [history, setHistoryArchiveById]);
 
