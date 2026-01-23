@@ -83,7 +83,8 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         setCurrentPlaylist(playlist);
         setHistory((prev) => [...prev, playlist]);
       },
-      execute: props.arguments.description !== undefined && props.arguments.description.trim() !== "",
+      // We only want to execute on initial prompt presence or tuning prompt change
+      execute: props.arguments.description !== undefined || tuningPrompt.trim() !== "",
     },
   );
 
@@ -294,26 +295,52 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         {/* Normal playlist UI - only show when no error */}
         {currentPlaylist && !generationError && (
           <List.Section title="Actions">
-            <List.Item
-              icon={Icon.Wand}
-              title={searchText ? `Tune: "${searchText}"` : "Tune Playlist"}
-              subtitle={searchText ? "Press Enter to apply" : "Type a prompt above"}
-              actions={
-                <ActionPanel>
-                  <Action title="Tune with Prompt" icon={Icon.Wand} onAction={() => tunePlaylist(searchText)} />
-                </ActionPanel>
-              }
-            />
-
-            <List.Item
-              icon={Icon.Play}
-              title="Play Playlist"
-              actions={
-                <ActionPanel>
-                  <Action title="Play Playlist" onAction={playPlaylist} />
-                </ActionPanel>
-              }
-            />
+            {/* Render Tune in first position when typing, otherwise render Play first */}
+            {searchText.trim() ? (
+              <>
+                <List.Item
+                  icon={Icon.Wand}
+                  title={`Tune: "${searchText}"`}
+                  subtitle="Press Enter to apply"
+                  actions={
+                    <ActionPanel>
+                      <Action title="Tune with Prompt" icon={Icon.Wand} onAction={() => tunePlaylist(searchText)} />
+                    </ActionPanel>
+                  }
+                />
+                <List.Item
+                  icon={Icon.Play}
+                  title="Play Playlist"
+                  actions={
+                    <ActionPanel>
+                      <Action title="Play Playlist" onAction={playPlaylist} />
+                    </ActionPanel>
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <List.Item
+                  icon={Icon.Play}
+                  title="Play Playlist"
+                  actions={
+                    <ActionPanel>
+                      <Action title="Play Playlist" onAction={playPlaylist} />
+                    </ActionPanel>
+                  }
+                />
+                <List.Item
+                  icon={Icon.Wand}
+                  title="Tune Playlist"
+                  subtitle="Type a prompt above"
+                  actions={
+                    <ActionPanel>
+                      <Action title="Tune with Prompt" icon={Icon.Wand} onAction={() => tunePlaylist(searchText)} />
+                    </ActionPanel>
+                  }
+                />
+              </>
+            )}
 
             <List.Item
               icon={Icon.Stars}
@@ -406,7 +433,8 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
                       title="View Generation"
                       icon={Icon.Clock}
                       onAction={() => {
-                        setCurrentPlaylist(history[0]);
+                        // Set current playlist to the last tune
+                        setCurrentPlaylist(history[history.length - 1]);
                         setHistory(history);
                       }}
                     />
