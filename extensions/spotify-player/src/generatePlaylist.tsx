@@ -1,6 +1,5 @@
 import { AI, Action, ActionPanel, Icon, LaunchProps, List, Toast, environment, showToast } from "@raycast/api";
 import { showFailureToast, useCachedState, usePromise } from "@raycast/utils";
-import retry from "async-retry";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "./components/View";
 import TrackListItem from "./components/TrackListItem";
@@ -169,13 +168,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
       // Play all tracks at once using uris array (replaces current playback)
       // NOTE: Doesn't overrides the queue (there is no API to clear queue)
       // Thus, it is better to use play with uris array instead of addToQueue
-      await retry(
-        async () => {
-          await play({ uris: trackUris });
-        },
-        // Retry logic to handle cases where Spotify is not open yet.
-        { retries: 3, minTimeout: 1000 },
-      );
+      await play({ uris: trackUris });
 
       await showToast({
         style: Toast.Style.Success,
@@ -212,16 +205,9 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
               errorMessage.includes("no device found") ||
               errorMessage.includes("player command failed"))
           ) {
-            // Use retry as Spotify may take time to open
-            await retry(
-              async () => {
-                await play({ id: track.id, type: "track" });
-              },
-              { retries: 3, minTimeout: 1000 },
-            );
+            await play({ id: track.id, type: "track" });
             startedPlayback = true;
             // Wait for playback to initialize before adding more tracks to queue
-            // TODO: We might want to wait for the track to start playing instead of a fixed delay
             await new Promise((resolve) => setTimeout(resolve, 1000));
           } else {
             throw err;
