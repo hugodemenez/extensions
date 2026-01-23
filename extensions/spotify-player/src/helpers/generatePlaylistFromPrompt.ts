@@ -13,8 +13,8 @@ Modify with: "${userPrompt}"`
     name: "Playlist Name",
     description: "A brief description of the playlist.",
     tracks: [
-      { name: "Song Title 1", artists: "Artist 1, Artist 2" },
-      { name: "Song Title 2", artists: "Artist 3" },
+      { name: "Song Title 1", artists: ["Artist 1, Artist 2"] },
+      { name: "Song Title 2", artists: ["Artist 1"] },
     ],
   };
 
