@@ -1,6 +1,6 @@
 # Spotify Player Changelog
 
-## [Generate Playlist: AI Tuning and Improved Playback] - {PR_MERGE_DATE}
+## [Generate Playlist: AI Tuning and Improved Playback] - 2026-01-23
 
 - Added AI tuning with history/undo
 - Changed argument to optional to access previous generation history
