@@ -81,7 +81,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         setCurrentPlaylist(playlist);
         setHistory((prev) => [...prev, playlist]);
       },
-      execute: props.arguments.description !== undefined,
+      execute: props.arguments.description !== undefined && props.arguments.description.trim() !== "",
     },
   );
 
@@ -404,7 +404,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         )}
 
         {/* See previous generations */}
-        {!props.arguments.description && (
+        {(!props.arguments.description || props.arguments.description.trim() === "") && (
           <List.Section title="Generation History">
             {Object.entries(historyArchiveById).map(([id, history]) => (
               <List.Item
