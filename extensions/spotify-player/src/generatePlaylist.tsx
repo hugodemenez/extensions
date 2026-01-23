@@ -82,6 +82,7 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
         if (!playlist) return;
         setCurrentPlaylist(playlist);
         setHistory((prev) => [...prev, playlist]);
+        setSearchText("");
       },
       // We only want to execute on initial prompt presence or tuning prompt change
       execute: props.arguments.description !== undefined || tuningPrompt.trim() !== "",
