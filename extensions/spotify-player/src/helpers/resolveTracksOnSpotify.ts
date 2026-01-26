@@ -5,7 +5,6 @@ export async function resolveTracksOnSpotify(aiTracks: TrackObject[]): Promise<T
   const tracks = await Promise.all(
     aiTracks.map(async (song) => {
       try {
-        console.log(`TRACK OBJECT: ${JSON.stringify(song)}`);
         const response = await searchTracks(
           `track:${song.name} artist:${Array.isArray(song.artists) ? song.artists.map((a) => a.name || a).join(" ") : song.artists}`,
           1,

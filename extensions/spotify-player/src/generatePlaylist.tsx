@@ -1,4 +1,15 @@
-import { AI, Action, ActionPanel, Icon, LaunchProps, List, Toast, environment, showToast } from "@raycast/api";
+import {
+  AI,
+  Action,
+  ActionPanel,
+  Clipboard,
+  Icon,
+  LaunchProps,
+  List,
+  Toast,
+  environment,
+  showToast,
+} from "@raycast/api";
 import { showFailureToast, useCachedState, usePromise } from "@raycast/utils";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "./components/View";
@@ -74,7 +85,16 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
     [tuningPrompt],
     {
       onError: (err) => {
-        showFailureToast(err.message, { title: "Could not generate playlist" });
+        showFailureToast(err.message, {
+          title: "Could not generate playlist",
+          primaryAction: {
+            title: "Copy AI Response",
+            onAction: async (toast) => {
+              await Clipboard.copy(err.cause?.toString() || "");
+              toast.hide();
+            },
+          },
+        });
         setGenerationError({ message: err.message, failedPrompt: tuningPrompt });
         setSearchText(tuningPrompt);
       },
@@ -400,7 +420,12 @@ export default function Command(props: LaunchProps<{ arguments: Arguments.Genera
                       title="View History"
                       icon={Icon.Clock}
                       target={
-                        <TuneHistoryList history={history} currentPlaylist={currentPlaylist} onSelect={jumpToVersion} />
+                        <TuneHistoryList
+                          history={history}
+                          setHistory={setHistory}
+                          currentPlaylist={currentPlaylist}
+                          onSelect={jumpToVersion}
+                        />
                       }
                     />
                   </ActionPanel>

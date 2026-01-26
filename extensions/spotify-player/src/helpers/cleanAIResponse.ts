@@ -10,7 +10,8 @@ export function cleanAIResponse(data: string): string {
   // Try to extract JSON object starting with { and ending with }
   const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("No JSON object found in AI response");
+    console.error("Failed to extract JSON from AI response:", data);
+    throw new Error("No JSON object found in AI response", { cause: data });
   }
 
   jsonString = jsonMatch[0];

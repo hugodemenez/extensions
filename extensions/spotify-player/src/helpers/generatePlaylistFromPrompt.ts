@@ -5,9 +5,21 @@ import { Playlist } from "../generatePlaylist";
 
 export async function generatePlaylistFromPrompt(userPrompt: string, history?: Playlist[]): Promise<Playlist> {
   const promptWithContext = history
-    ? `Previous playlist: [${history?.map((playlist) => `"${playlist.prompt}"`).join(", ")}].
-Modify with: "${userPrompt}"`
-    : userPrompt;
+    ? `CONTEXT:
+already generated ${history.length} playlist: ${history
+        .slice(-5)
+        .map(
+          (playlist, index) =>
+            `[${index + 1}] ASKED: "${playlist.prompt}"
+SAMPLE SONGS: ${playlist.tracks
+              .slice(0, 3)
+              .map((track) => `"${track.name}" by ${track.artists?.map((artist) => artist.name).join(", ")}`)}`,
+        )
+        .join(", ")}].
+TUNE WITH INSTRUCTIONS: "${userPrompt}"`
+    : `USER ASKED FOR: ${userPrompt}`;
+
+  console.log("Prompt with context:", promptWithContext);
 
   const playlistSample = {
     name: "Playlist Name",
@@ -19,10 +31,12 @@ Modify with: "${userPrompt}"`
   };
 
   const prompt = `You are a Playlist generator.
-Create a playlist of 10 songs based on user prompt: "${promptWithContext}".
+You have access to the internet to make research
+CREATE 10 songs playlist 
+"${promptWithContext}".
 Return ONLY minified JSON:
 ${JSON.stringify(playlistSample)}
-Use exact Spotify song/artist names. No markdown, no explanation.`;
+No markdown, no explanation.`;
 
   const answer = AI.ask(prompt, { model: AI.Model["Perplexity_Sonar"] });
 
@@ -33,8 +47,11 @@ Use exact Spotify song/artist names. No markdown, no explanation.`;
 
   const data = await answer;
 
+  console.log("Raw AI Response:", data);
+
   // Clean AI response
   const jsonString = cleanAIResponse(data);
+  console.log("Cleaned AI Response:", jsonString);
 
   // Parse JSON string
   const playlist = JSON.parse(jsonString);
