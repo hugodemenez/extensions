@@ -1,5 +1,10 @@
 # Downloads Manager Changelog
 
+## [Add file preview] - {PR_MERGE_DATE}
+
+- Added file preview in Manage Downloads: image previews and metadata for downloaded files.
+- Added utility functions for image data URLs and Quick Look previews on macOS.
+
 ## [AI tools] - 2025-12-25
 
 - Added the `Get Latest Download` tool to get the path of the latest download with Raycast AI.
