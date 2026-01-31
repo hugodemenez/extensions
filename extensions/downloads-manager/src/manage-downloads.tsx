@@ -1,10 +1,6 @@
 import { ActionPanel, Action, List, Grid, Icon, Keyboard } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { execFile } from "child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "fs";
 import { PathLike } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import { useCallback, useState } from "react";
 import {
   defaultDownloadsLayout,
@@ -23,16 +19,14 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
   const shouldLoadQuickLook = isSelected && isDarwin;
   const { data: quickLookDataUrl, isLoading: quickLookLoading } = usePromise(
     useCallback(
-      () =>
-        shouldLoadQuickLook ? getQuickLookPreviewDataUrl(download.path) : Promise.resolve(null),
+      () => (shouldLoadQuickLook ? getQuickLookPreviewDataUrl(download.path) : Promise.resolve(null)),
       [shouldLoadQuickLook, download.path],
     ),
   );
-  const imageDataUrl =
-    !isDarwin && isImageFile(download.file) ? getImageDataUrl(download.path, download.file) : null;
+  const imageDataUrl = !isDarwin && isImageFile(download.file) ? getImageDataUrl(download.path, download.file) : null;
 
   const markdown =
-    quickLookDataUrl ?? imageDataUrl
+    (quickLookDataUrl ?? imageDataUrl)
       ? `![Preview](${quickLookDataUrl ?? imageDataUrl})`
       : quickLookLoading
         ? `*Loading preview…*`
@@ -48,15 +42,9 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
         <List.Item.Detail.Metadata>
           <List.Item.Detail.Metadata.Label title="File" text={download.file} />
           <List.Item.Detail.Metadata.Separator />
-          <List.Item.Detail.Metadata.Label
-            title="Last modified"
-            text={download.lastModifiedAt.toLocaleString()}
-          />
+          <List.Item.Detail.Metadata.Label title="Last modified" text={download.lastModifiedAt.toLocaleString()} />
           <List.Item.Detail.Metadata.Separator />
-          <List.Item.Detail.Metadata.Label
-            title="Created"
-            text={download.createdAt.toLocaleString()}
-          />
+          <List.Item.Detail.Metadata.Label title="Created" text={download.createdAt.toLocaleString()} />
         </List.Item.Detail.Metadata>
       }
     />
@@ -66,9 +54,7 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
 function Command() {
   const [downloads, setDownloads] = useState(getDownloads());
   const [downloadsLayout, setDownloadsLayout] = useState<string>(defaultDownloadsLayout);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(
-    () => getDownloads()[0]?.path ?? null,
-  );
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(() => getDownloads()[0]?.path ?? null);
 
   function handleTrash(paths: PathLike | PathLike[]) {
     setDownloads((downloads) =>

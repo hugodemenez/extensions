@@ -215,8 +215,6 @@ export const withAccessToDownloadsFolder = <P extends object>(Component: Compone
   };
 };
 
-
-
 const PREVIEW_THUMBNAIL_SIZE = 512;
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024; // 5MB
 const IMAGE_MIME: Record<string, string> = {
@@ -292,4 +290,3 @@ export function getQuickLookPreviewDataUrl(filePath: string): Promise<string | n
     }
   });
 }
-
