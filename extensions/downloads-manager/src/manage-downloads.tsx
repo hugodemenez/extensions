@@ -1,17 +1,74 @@
 import { ActionPanel, Action, List, Grid, Icon, Keyboard } from "@raycast/api";
+import { usePromise } from "@raycast/utils";
+import { execFile } from "child_process";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "fs";
 import { PathLike } from "fs";
-import { useState } from "react";
+import { tmpdir } from "os";
+import { join } from "path";
+import { useCallback, useState } from "react";
 import {
   defaultDownloadsLayout,
   downloadsFolder,
   getDownloads,
+  getImageDataUrl,
+  getQuickLookPreviewDataUrl,
   isImageFile,
   withAccessToDownloadsFolder,
 } from "./utils";
 
+type Download = ReturnType<typeof getDownloads>[number];
+
+function FilePreviewDetail({ download, isSelected }: { download: Download; isSelected: boolean }) {
+  const isDarwin = process.platform === "darwin";
+  const shouldLoadQuickLook = isSelected && isDarwin;
+  const { data: quickLookDataUrl, isLoading: quickLookLoading } = usePromise(
+    useCallback(
+      () =>
+        shouldLoadQuickLook ? getQuickLookPreviewDataUrl(download.path) : Promise.resolve(null),
+      [shouldLoadQuickLook, download.path],
+    ),
+  );
+  const imageDataUrl =
+    !isDarwin && isImageFile(download.file) ? getImageDataUrl(download.path, download.file) : null;
+
+  const markdown =
+    quickLookDataUrl ?? imageDataUrl
+      ? `![Preview](${quickLookDataUrl ?? imageDataUrl})`
+      : quickLookLoading
+        ? `*Loading preview…*`
+        : isDarwin
+          ? `*Preview unavailable.* Use **Quick Look** (⌘⇧Y) or **Open** to view.`
+          : `*Preview is only available on macOS.* Use **Open** to view.`;
+
+  return (
+    <List.Item.Detail
+      markdown={markdown}
+      isLoading={quickLookLoading}
+      metadata={
+        <List.Item.Detail.Metadata>
+          <List.Item.Detail.Metadata.Label title="File" text={download.file} />
+          <List.Item.Detail.Metadata.Separator />
+          <List.Item.Detail.Metadata.Label
+            title="Last modified"
+            text={download.lastModifiedAt.toLocaleString()}
+          />
+          <List.Item.Detail.Metadata.Separator />
+          <List.Item.Detail.Metadata.Label
+            title="Created"
+            text={download.createdAt.toLocaleString()}
+          />
+        </List.Item.Detail.Metadata>
+      }
+    />
+  );
+}
+
 function Command() {
   const [downloads, setDownloads] = useState(getDownloads());
   const [downloadsLayout, setDownloadsLayout] = useState<string>(defaultDownloadsLayout);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(
+    () => getDownloads()[0]?.path ?? null,
+  );
 
   function handleTrash(paths: PathLike | PathLike[]) {
     setDownloads((downloads) =>
@@ -73,7 +130,7 @@ function Command() {
     description: "Well, first download some files ¯\\_(ツ)_/¯",
   };
 
-  const getItemProps = (download: ReturnType<typeof getDownloads>[number]) => ({
+  const getItemProps = (download: Download) => ({
     title: download.file,
     quickLook: { path: download.path, name: download.file },
     actions: actions(download),
@@ -95,19 +152,15 @@ function Command() {
   }
 
   return (
-    <List>
+    <List isShowingDetail onSelectionChange={setSelectedItemId}>
       {downloads.length === 0 && <List.EmptyView {...emptyViewProps} />}
       {downloads.map((download) => (
         <List.Item
           key={download.path}
+          id={download.path}
           {...getItemProps(download)}
           icon={{ fileIcon: download.path }}
-          accessories={[
-            {
-              date: download.lastModifiedAt,
-              tooltip: `Last modified: ${download.lastModifiedAt.toLocaleString()}`,
-            },
-          ]}
+          detail={<FilePreviewDetail download={download} isSelected={selectedItemId === download.path} />}
         />
       ))}
     </List>
