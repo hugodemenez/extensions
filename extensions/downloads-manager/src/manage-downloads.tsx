@@ -26,14 +26,10 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
     // Fallback to Quick Look preview for non-image files on macOS
     if (!isDarwin) return null;
     if (download.isDirectory) return null;
-    return await getQuickLookPreviewDataUrl(download.path)
+    return await getQuickLookPreviewDataUrl(download.path);
   });
 
-  let markdown = isLoading ?
-    `*Loading preview...*` :
-    data ?
-      `![Preview](${data})`
-      : `*No preview available*`;
+  const markdown = isLoading ? `*Loading preview...*` : data ? `![Preview](${data})` : `*No preview available*`;
 
   return (
     <List.Item.Detail
@@ -141,13 +137,11 @@ function Command({ currentFolderPath }: { currentFolderPath: string }) {
   const actions = (download: Download) => (
     <ActionPanel>
       <ActionPanel.Section>
-        {
-          download.isDirectory ?
-            <Action.Push title="Open Directory" target={<Command currentFolderPath={download.path} />} />
-            : (
-              <Action.Open title="Open File" target={download.path} />
-            )
-        }
+        {download.isDirectory ? (
+          <Action.Push title="Open Directory" target={<Command currentFolderPath={download.path} />} />
+        ) : (
+          <Action.Open title="Open File" target={download.path} />
+        )}
         <Action.ShowInFinder path={download.path} />
         <Action.CopyToClipboard
           title="Copy File"
@@ -173,7 +167,10 @@ function Command({ currentFolderPath }: { currentFolderPath: string }) {
         <Action
           title="Toggle Detail View"
           icon={isShowingDetail ? Icon.EyeDisabled : Icon.Eye}
-          shortcut={{ macOS: { modifiers: ["cmd", "shift"], key: "l" }, Windows: { modifiers: ["ctrl", "shift"], key: "l" } }}
+          shortcut={{
+            macOS: { modifiers: ["cmd", "shift"], key: "l" },
+            Windows: { modifiers: ["ctrl", "shift"], key: "l" },
+          }}
           onAction={toggleDetailView}
         />
       </ActionPanel.Section>
