@@ -46,6 +46,7 @@ const showHiddenFiles = preferences.showHiddenFiles;
 const fileOrder = preferences.fileOrder;
 const latestDownloadOrder = preferences.lastestDownloadOrder;
 export const defaultDownloadsLayout = preferences.downloadsLayout ?? "list";
+export const showPreview = preferences.showPreview ?? true;
 const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".heic", ".svg"];
 
 export function getCustomDownloadsFolder(): string {
@@ -77,17 +78,39 @@ export function isImageFile(filename: string): boolean {
   return imageExtensions.includes(ext);
 }
 
-export function getDownloads() {
+function countDirectoryItems(dirPath: string): number {
+  try {
+    const items = readdirSync(dirPath);
+    return items.length;
+  } catch (error) {
+    console.warn(`Error counting items in directory '${dirPath}':`, error);
+    return 0;
+  }
+}
+
+export function getDownloadsCount(): number {
   const files = readdirSync(downloadsFolder);
-  return files
-    .filter((file) => showHiddenFiles || !file.startsWith("."))
+  return files.filter((file) => showHiddenFiles || !file.startsWith(".")).length;
+}
+
+export function getDownloads(limit?: number, offset: number = 0) {
+  const files = readdirSync(downloadsFolder);
+  const filteredFiles = files.filter((file) => showHiddenFiles || !file.startsWith("."));
+
+  const allDownloads = filteredFiles
     .map((file) => {
       const path = join(downloadsFolder, file);
       try {
         const stats = statSync(path);
+        const isDirectory = stats.isDirectory();
+        const size = isDirectory ? 0 : stats.size;
+        const itemCount = isDirectory ? countDirectoryItems(path) : undefined;
         return {
           file,
           path,
+          size,
+          isDirectory,
+          itemCount,
           lastModifiedAt: stats.mtime,
           createdAt: stats.ctime,
           addedAt: stats.atime,
@@ -112,6 +135,11 @@ export function getDownloads() {
           return b.lastModifiedAt.getTime() - a.lastModifiedAt.getTime();
       }
     });
+
+  if (limit !== undefined) {
+    return allDownloads.slice(offset, offset + limit);
+  }
+  return allDownloads;
 }
 
 export function getLatestDownload() {
@@ -243,49 +271,49 @@ export function getImageDataUrl(path: string, filename: string): string | null {
 
 export function getQuickLookPreviewDataUrl(filePath: string): Promise<string | null> {
   return new Promise((resolve) => {
-    if (process.platform !== "darwin") {
-      resolve(null);
-      return;
-    }
-    let tempDir: string | null = null;
-    try {
-      tempDir = mkdtempSync(join(tmpdir(), "raycast-ql-preview-"));
-      execFile(
-        "qlmanage",
-        ["-t", "-s", String(PREVIEW_THUMBNAIL_SIZE), "-o", tempDir, filePath],
-        (error, _stdout, stderr) => {
-          try {
-            if (error || stderr) {
-              resolve(null);
-              return;
-            }
-            const files = readdirSync(tempDir!);
-            const png = files.find((f) => f.endsWith(".png"));
-            if (!png) {
-              resolve(null);
-              return;
-            }
-            const buffer = readFileSync(join(tempDir!, png));
-            resolve(`data:image/png;base64,${buffer.toString("base64")}`);
-          } finally {
-            if (tempDir) {
-              try {
-                rmSync(tempDir, { recursive: true });
-              } catch {
-                // ignore cleanup errors
+    if (process.platform === "darwin") {
+      let tempDir: string | null = null;
+      try {
+        tempDir = mkdtempSync(join(tmpdir(), "raycast-ql-preview-"));
+        execFile(
+          "qlmanage",
+          ["-t", "-s", String(PREVIEW_THUMBNAIL_SIZE), "-o", tempDir, filePath],
+          (error, _stdout, stderr) => {
+            try {
+              if (error || stderr) {
+                resolve(null);
+                return;
+              }
+              const files = readdirSync(tempDir!);
+              const png = files.find((f) => f.endsWith(".png"));
+              if (!png) {
+                resolve(null);
+                return;
+              }
+              const buffer = readFileSync(join(tempDir!, png));
+              resolve(`data:image/png;base64,${buffer.toString("base64")}`);
+            } finally {
+              if (tempDir) {
+                try {
+                  rmSync(tempDir, { recursive: true });
+                } catch {
+                  // ignore cleanup errors
+                }
               }
             }
+          },
+        );
+      } catch {
+        if (tempDir) {
+          try {
+            rmSync(tempDir, { recursive: true });
+          } catch {
+            // ignore
           }
-        },
-      );
-    } catch {
-      if (tempDir) {
-        try {
-          rmSync(tempDir, { recursive: true });
-        } catch {
-          // ignore
         }
+        resolve(null);
       }
+    } else {
       resolve(null);
     }
   });

@@ -4,6 +4,9 @@
 
 - Added file preview in Manage Downloads: image previews and metadata for downloaded files.
 - Added utility functions for image data URLs and Quick Look previews on macOS.
+- Added pagination for Manage Downloads to combat OOM crashes
+- Added preference for toggling the preview image
+- Added shortcut for toggling metadata view
 
 ## [AI tools] - 2025-12-25
 
