@@ -39,6 +39,15 @@
           "default": false
         },
         {
+          "type": "checkbox",
+          "name": "showPreview",
+          "label": "Show Preview",
+          "title": "Show Preview",
+          "description": "Show the preview of the downloaded file or folder",
+          "required": false,
+          "default": true
+        },
+        {
           "type": "dropdown",
           "name": "fileOrder",
           "label": "File Order",
@@ -166,15 +175,6 @@
           "value": "permaDel"
         }
       ]
-    },
-    {
-      "type": "checkbox",
-      "name": "showPreview",
-      "label": "Show Preview",
-      "title": "Show Preview",
-      "description": "Show the preview of the downloaded file or folder",
-      "required": false,
-      "default": true
     }
   ],
   "tools": [

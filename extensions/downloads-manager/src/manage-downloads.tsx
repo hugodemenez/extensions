@@ -1,5 +1,5 @@
 import { ActionPanel, Action, List, Grid, Icon, Keyboard } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedState, usePromise } from "@raycast/utils";
 import { PathLike } from "fs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -11,66 +11,34 @@ import {
   isImageFile,
   showPreview,
   withAccessToDownloadsFolder,
+  Download,
+  formatFileSize,
+  getFileType,
 } from "./utils";
 
-type Download = {
-  file: string;
-  path: string;
-  size: number;
-  isDirectory: boolean;
-  itemCount?: number;
-  lastModifiedAt: Date;
-  createdAt: Date;
-  addedAt: Date;
-  birthAt: Date;
-};
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
-
-function getFileExtension(filename: string): string {
-  const lastDot = filename.lastIndexOf(".");
-  if (lastDot === -1 || lastDot === filename.length - 1) return "";
-  return filename.slice(lastDot + 1).toUpperCase();
-}
-
-function getFileType(download: Download): string {
-  if (download.isDirectory) {
-    return "Folder";
-  }
-  const extension = getFileExtension(download.file);
-  return extension || "File";
-}
-
 function FilePreviewDetail({ download, isSelected }: { download: Download; isSelected: boolean }) {
+  if (!isSelected) return null;
   const isDarwin = process.platform === "darwin";
-  const shouldLoadPreview = isSelected && isDarwin && showPreview;
-  const { data: previewDataUrl, isLoading: previewLoading } = usePromise(
-    useCallback(
-      () => (shouldLoadPreview ? getQuickLookPreviewDataUrl(download.path) : Promise.resolve(null)),
-      [shouldLoadPreview, download.path],
-    ),
-  );
-  // Fallback to direct image reading for non-macOS platforms
-  const imageDataUrl = !isDarwin && isImageFile(download.file) ? getImageDataUrl(download.path, download.file) : null;
 
-  const markdown =
-    (previewDataUrl ?? imageDataUrl)
-      ? `![Preview](${previewDataUrl ?? imageDataUrl})`
-      : previewLoading
-        ? `*Loading preview…*`
-        : isDarwin
-          ? `*Preview unavailable.* Use **Quick Look** (⌘⇧Y) or **Open** to view.`
-          : `*Preview is only available on macOS.* Use **Open** to view.`;
+  const { data, isLoading } = usePromise(async () => {
+    if (!showPreview) return null;
+    if (isImageFile(download.file)) return getImageDataUrl(download.path, download.file);
+    // Fallback to Quick Look preview for non-image files on macOS
+    if (!isDarwin) return null;
+    if (download.isDirectory) return null;
+    return await getQuickLookPreviewDataUrl(download.path)
+  });
+
+  let markdown = isLoading ?
+    `*Loading preview...*` :
+    data ?
+      `![Preview](${data})`
+      : `*No preview available*`;
 
   return (
     <List.Item.Detail
-      {...(isDarwin && showPreview && { markdown, isLoading: previewLoading })}
+      isLoading={isLoading}
+      markdown={showPreview ? markdown : undefined}
       metadata={
         <List.Item.Detail.Metadata>
           <List.Item.Detail.Metadata.Label title="File" text={download.file} />
@@ -104,16 +72,16 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
   );
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 15;
 
-function Command() {
+function Command({ currentFolderPath }: { currentFolderPath: string }) {
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [nextOffset, setNextOffset] = useState(0);
-  const [downloadsLayout, setDownloadsLayout] = useState<string>(defaultDownloadsLayout);
+  const [downloadsLayout, setDownloadsLayout] = useCachedState("downloadsLayout", defaultDownloadsLayout);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [isShowingDetail, setIsShowingDetail] = useState(true);
+  const [isShowingDetail, setIsShowingDetail] = useCachedState("isShowingDetail", true);
   const cancelRef = useRef<AbortController | null>(null);
 
   const loadNextPage = useCallback((offset: number) => {
@@ -122,7 +90,7 @@ function Command() {
     cancelRef.current = new AbortController();
 
     try {
-      const newDownloads = getDownloads(PAGE_SIZE, offset);
+      const newDownloads = getDownloads(PAGE_SIZE, offset, currentFolderPath);
       const hasMoreItems = newDownloads.length === PAGE_SIZE;
 
       if (!cancelRef.current.signal.aborted) {
@@ -173,7 +141,13 @@ function Command() {
   const actions = (download: Download) => (
     <ActionPanel>
       <ActionPanel.Section>
-        <Action.Open title="Open File" target={download.path} />
+        {
+          download.isDirectory ?
+            <Action.Push title="Open Directory" target={<Command currentFolderPath={download.path} />} />
+            : (
+              <Action.Open title="Open File" target={download.path} />
+            )
+        }
         <Action.ShowInFinder path={download.path} />
         <Action.CopyToClipboard
           title="Copy File"

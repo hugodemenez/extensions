@@ -23,6 +23,18 @@ const CACHE_KEY = "customDownloadsFolder";
 
 const preferences = getPreferenceValues();
 
+export type Download = {
+  file: string;
+  path: string;
+  size: number;
+  isDirectory: boolean;
+  itemCount?: number;
+  lastModifiedAt: Date;
+  createdAt: Date;
+  addedAt: Date;
+  birthAt: Date;
+};
+
 function getCachedOrDetectDownloadsFolder(): string {
   // If preference is set, use it
   if (preferences.downloadsFolder && preferences.downloadsFolder.trim()) {
@@ -81,7 +93,7 @@ export function isImageFile(filename: string): boolean {
 function countDirectoryItems(dirPath: string): number {
   try {
     const items = readdirSync(dirPath);
-    return items.length;
+    return items.filter((name) => showHiddenFiles || !name.startsWith(".")).length;
   } catch (error) {
     console.warn(`Error counting items in directory '${dirPath}':`, error);
     return 0;
@@ -93,13 +105,13 @@ export function getDownloadsCount(): number {
   return files.filter((file) => showHiddenFiles || !file.startsWith(".")).length;
 }
 
-export function getDownloads(limit?: number, offset: number = 0) {
-  const files = readdirSync(downloadsFolder);
+export function getDownloads(limit?: number, offset: number = 0, currentFolderPath: string | null = null) {
+  const files = readdirSync(currentFolderPath ?? downloadsFolder);
   const filteredFiles = files.filter((file) => showHiddenFiles || !file.startsWith("."));
 
   const allDownloads = filteredFiles
     .map((file) => {
-      const path = join(downloadsFolder, file);
+      const path = join(currentFolderPath ?? downloadsFolder, file);
       try {
         const stats = statSync(path);
         const isDirectory = stats.isDirectory();
@@ -317,4 +329,26 @@ export function getQuickLookPreviewDataUrl(filePath: string): Promise<string | n
       resolve(null);
     }
   });
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+export function getFileExtension(filename: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot === -1 || lastDot === filename.length - 1) return "";
+  return filename.slice(lastDot + 1).toUpperCase();
+}
+
+export function getFileType(download: Download): string {
+  if (download.isDirectory) {
+    return "Folder";
+  }
+  const extension = getFileExtension(download.file);
+  return extension || "File";
 }
