@@ -79,7 +79,7 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
 
 const PAGE_SIZE = 100;
 
-function Command({ currentFolderPath }: { currentFolderPath: string }) {
+function Command({ currentFolderPath = downloadsFolder }: { currentFolderPath?: string }) {
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
