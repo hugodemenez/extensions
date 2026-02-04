@@ -2,10 +2,10 @@
 
 ## [Add file preview] - {PR_MERGE_DATE}
 
-- Added file preview in Manage Downloads: image previews and metadata for downloaded files.
-- Added utility functions for image data URLs and Quick Look previews on macOS.
+- Added file preview in Manage Downloads: image previews (macOS only) and metadata for downloaded files.
+- Added utility functions for Quick Look previews on macOS (using ql-manage).
 - Added pagination for Manage Downloads to combat OOM crashes
-- Added preference for toggling the preview image (on the manage downloads command)
+- Added preference for toggling the preview image
 - Made action preferences persist using cached states
 - Added shortcut for toggling metadata view
 - Added sub-directory navigation

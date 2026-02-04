@@ -256,77 +256,78 @@ export const withAccessToDownloadsFolder = <P extends object>(Component: Compone
 };
 
 const PREVIEW_THUMBNAIL_SIZE = 512;
-const MAX_PREVIEW_BYTES = 5 * 1024 * 1024; // 5MB
-const IMAGE_MIME: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".bmp": "image/bmp",
-  ".tiff": "image/tiff",
-  ".heic": "image/heic",
-  ".svg": "image/svg+xml",
-};
-
-export function getImageDataUrl(path: string, filename: string): string | null {
-  try {
-    const ext = filename.toLowerCase().slice(filename.lastIndexOf("."));
-    const mime = IMAGE_MIME[ext] ?? "image/png";
-    const buffer = readFileSync(path);
-    if (buffer.length > MAX_PREVIEW_BYTES) return null;
-    return `data:${mime};base64,${buffer.toString("base64")}`;
-  } catch {
-    return null;
-  }
-}
 
 export function getQuickLookPreviewDataUrl(filePath: string): Promise<string | null> {
   return new Promise((resolve) => {
-    if (process.platform === "darwin") {
-      let tempDir: string | null = null;
-      try {
-        tempDir = mkdtempSync(join(tmpdir(), "raycast-ql-preview-"));
-        execFile(
-          "qlmanage",
-          ["-t", "-s", String(PREVIEW_THUMBNAIL_SIZE), "-o", tempDir, filePath],
-          (error, _stdout, stderr) => {
-            try {
-              if (error || stderr) {
-                resolve(null);
-                return;
-              }
-              const files = readdirSync(tempDir!);
-              const png = files.find((f) => f.endsWith(".png"));
-              if (!png) {
-                resolve(null);
-                return;
-              }
-              const buffer = readFileSync(join(tempDir!, png));
-              resolve(`data:image/png;base64,${buffer.toString("base64")}`);
-            } finally {
-              if (tempDir) {
-                try {
-                  rmSync(tempDir, { recursive: true });
-                } catch {
-                  // ignore cleanup errors
-                }
-              }
-            }
-          },
-        );
-      } catch {
-        if (tempDir) {
-          try {
-            rmSync(tempDir, { recursive: true });
-          } catch {
-            // ignore
-          }
-        }
-        resolve(null);
-      }
-    } else {
+    if (process.platform !== "darwin") {
       resolve(null);
+      return;
+    }
+
+    const TIMEOUT_MS = 1000;
+
+    let tempDir: string | null = null;
+    let resolved = false;
+
+    const resolveOnce = (value: string | null) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(value);
+      }
+    };
+
+    const cleanup = () => {
+      if (tempDir) {
+        try {
+          rmSync(tempDir, { recursive: true });
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      console.warn(`Quick Look preview timed out for '${filePath}'`);
+      cleanup();
+      resolveOnce(null);
+    }, TIMEOUT_MS);
+
+    try {
+      tempDir = mkdtempSync(join(tmpdir(), "raycast-ql-preview-"));
+      execFile(
+        "qlmanage",
+        ["-t", "-s", String(PREVIEW_THUMBNAIL_SIZE), "-o", tempDir, filePath],
+        (error, _stdout, stderr) => {
+          try {
+            if (error || stderr) {
+              resolveOnce(null);
+              return;
+            }
+
+            const files = readdirSync(tempDir!);
+            const png = files.find((f) => f.endsWith(".png"));
+
+            if (!png) {
+              resolveOnce(null);
+              return;
+            }
+
+            const buffer = readFileSync(join(tempDir!, png));
+            resolveOnce(`data:image/png;base64,${buffer.toString("base64")}`);
+          } catch (err) {
+            console.warn(`Error generating Quick Look preview for '${filePath}':`, err);
+            resolveOnce(null);
+          } finally {
+            clearTimeout(timeoutId);
+            cleanup();
+          }
+        },
+      );
+    } catch (err) {
+      console.warn(`Error starting Quick Look for '${filePath}':`, err);
+      clearTimeout(timeoutId);
+      cleanup();
+      resolveOnce(null);
     }
   });
 }

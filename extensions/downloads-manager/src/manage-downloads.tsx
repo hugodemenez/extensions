@@ -6,7 +6,6 @@ import {
   defaultDownloadsLayout,
   downloadsFolder,
   getDownloads,
-  getImageDataUrl,
   getQuickLookPreviewDataUrl,
   isImageFile,
   showPreview,
@@ -17,24 +16,34 @@ import {
 } from "./utils";
 
 function FilePreviewDetail({ download, isSelected }: { download: Download; isSelected: boolean }) {
-  if (!isSelected) return null;
   const isDarwin = process.platform === "darwin";
+  const isHiddenFile = download.file.startsWith(".");
+  const shouldShowPreview = isDarwin && showPreview && !download.isDirectory && isSelected && !isHiddenFile;
 
-  const { data, isLoading } = usePromise(async () => {
-    if (!showPreview) return null;
-    if (isImageFile(download.file)) return getImageDataUrl(download.path, download.file);
-    // Fallback to Quick Look preview for non-image files on macOS
-    if (!isDarwin) return null;
-    if (download.isDirectory) return null;
-    return await getQuickLookPreviewDataUrl(download.path);
-  });
+  const { data, isLoading } = usePromise(
+    async (path: string) => {
+      return await getQuickLookPreviewDataUrl(path);
+    },
+    [download.path],
+    { execute: shouldShowPreview },
+  );
 
-  const markdown = isLoading ? `*Loading preview...*` : data ? `![Preview](${data})` : `*No preview available*`;
+  if (!isSelected) {
+    return null;
+  }
+
+  const markdown = shouldShowPreview
+    ? isLoading
+      ? "*Loading preview...*"
+      : data
+        ? `![Preview](${data})`
+        : "*No preview available*"
+    : null;
 
   return (
     <List.Item.Detail
-      isLoading={isLoading}
-      markdown={showPreview ? markdown : undefined}
+      isLoading={shouldShowPreview && isLoading}
+      markdown={markdown}
       metadata={
         <List.Item.Detail.Metadata>
           <List.Item.Detail.Metadata.Label title="File" text={download.file} />
@@ -68,7 +77,7 @@ function FilePreviewDetail({ download, isSelected }: { download: Download; isSel
   );
 }
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 100;
 
 function Command({ currentFolderPath }: { currentFolderPath: string }) {
   const [downloads, setDownloads] = useState<Download[]>([]);
