@@ -137,7 +137,7 @@ function Command({ currentFolderPath = downloadsFolder }: { currentFolderPath?: 
   const handleReload = useCallback(() => {
     setNextOffset(0);
     loadNextPage(0);
-  }, [loadNextPage]);
+  }, [loadNextPage, setNextOffset]);
 
   const toggleDetailView = useCallback(() => {
     setIsShowingDetail((prev) => !prev);
