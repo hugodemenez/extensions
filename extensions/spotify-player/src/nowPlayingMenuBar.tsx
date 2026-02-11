@@ -80,9 +80,7 @@ function NowPlayingMenuBarCommand({ launchType }: LaunchProps) {
   // We have to ensure that the Spotify App Data is loaded before we can display the correct UI
   if (spotifyAppDataIsLoading || currentlyPlayingIsLoading) {
     // putting is Loading to true ensure we don't unload the menu bar when the data is loading (null unloads the menu bar)
-    return (
-      <MenuBarExtra isLoading={true} />
-    );
+    return <MenuBarExtra isLoading={true} />;
   }
 
   if (!isSpotifyActive) {
