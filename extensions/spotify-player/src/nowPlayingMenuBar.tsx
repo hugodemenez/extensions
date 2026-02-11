@@ -96,12 +96,6 @@ function NowPlayingMenuBarCommand({ launchType }: LaunchProps) {
   const dataIsOld =
     currentlyPlayingData?.timestamp && currentTime - currentlyPlayingData.timestamp > twoHoursInMilliseconds;
 
-  if (spotifyAppData?.state === "NOT_RUNNING") {
-    return (
-      <OpenSpotify isLoading={spotifyAppDataIsLoading || currentlyPlayingIsLoading || currentlyPlayingIsLoading} />
-    );
-  }
-
   if ((dataIsOld && !isPlaying) || !currentlyPlayingData?.item) {
     return (
       <NothingPlaying isLoading={spotifyAppDataIsLoading || currentlyPlayingIsLoading || currentlyPlayingIsLoading} />
