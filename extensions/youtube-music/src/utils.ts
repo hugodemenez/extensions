@@ -1,8 +1,9 @@
-import { Application, Toast, getPreferenceValues, showToast } from "@raycast/api";
+import { Application, Toast, getPreferenceValues, showHUD, showToast } from "@raycast/api";
 import { runAppleScript } from "run-applescript";
 
 type SupportedBrowsers = "Safari" | "Chrome" | "YouTube Music" | "Microsoft Edge";
 type UrlPreference = "music" | "youtube" | "both";
+type ErrorMessages = "no-matching-tab" | "js-not-allowed";
 
 interface Preferences {
   browser: Application;
@@ -50,12 +51,11 @@ function getUrlCondition(preference: UrlPreference): string {
 /**
  * Executes JavaScript inside a matching YouTube or YouTube Music tab in the selected browser.
  */
-export async function runJSInYouTubeMusicTab(code: string): Promise<string | false> {
+export async function runJSInYouTubeMusicTab(code: string): Promise<string | undefined> {
   const preferences = getPreferenceValues<Preferences>();
   const { browser, urlPreference } = preferences;
 
-  try {
-    const result = await runAppleScript(`
+  const result = await runAppleScript(`
       tell application "${browser.name}"
         repeat with w in (every window)
           repeat with t in (every tab whose ${getUrlCondition(urlPreference)}) of w
@@ -72,35 +72,18 @@ export async function runJSInYouTubeMusicTab(code: string): Promise<string | fal
       return "false"
     `);
 
-    if (result === "false") {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "No matching YouTube tab found",
-        message: "Check your browser and URL preference in settings.",
-      });
-      return false;
-    }
-
-    return result;
-  } catch (e) {
-    const message = (e as OsaError).stderr;
-
-    if (message.includes("Allow JavaScript from Apple Events")) {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "JavaScript not allowed",
-        message: `Enable "Allow JavaScript from Apple Events" in ${browser.name}'s Develop menu.`,
-      });
-    } else {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "AppleScript execution failed",
-        message,
-      });
-    }
-
-    return false;
+  // Either no matching tab found or code couldn't run
+  // For example when song is already liked and we try to like it again
+  if (result === "false") {
+    return;
   }
+
+  if (result.includes("Allow JavaScript from Apple Events")) {
+    await showHUD("⚠️ Enable \"Allow JavaScript from Apple Events\" in your browser's Develop menu.");
+    return;
+  }
+
+  return result;
 }
 
 export const goToChapter = {

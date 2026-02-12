@@ -28,21 +28,23 @@ export default async () => {
       })();
     `);
 
-    switch (result) {
-      case "ytmusic-next":
-        await showHUD("⏭️ Next Song (YT Music)");
-        break;
-      case "youtube-next":
-        await showHUD("⏭️ Next Video");
-        break;
-      case "ytmusic-fail":
-        await showHUD("❌ No Next Button (YT Music)");
-        break;
-      case "youtube-fail":
-        await showHUD("❌ No Next Video Button");
-        break;
-      default:
-        await showHUD("❌ Unknown Error");
+    if (result) {
+      switch (result) {
+        case "ytmusic-next":
+          await showHUD("⏭️ Next Song (YT Music)");
+          break;
+        case "youtube-next":
+          await showHUD("⏭️ Next Video");
+          break;
+        case "ytmusic-fail":
+          await showHUD("❌ No Next Button (YT Music)");
+          break;
+        case "youtube-fail":
+          await showHUD("❌ No Next Video Button");
+          break;
+        default:
+          await showHUD("❌ Unknown Error");
+      }
     }
 
     await closeMainWindow();

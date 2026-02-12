@@ -18,7 +18,7 @@ export default async () => {
           return "ytmusic-none";
         }
 
-        // YouTube – neues UI: segmented-like-dislike-button-view-model
+        // YouTube - new UI: segmented-like-dislike-button-view-model
         const newLikeButton = document.querySelector(
           "segmented-like-dislike-button-view-model like-button-view-model button[aria-pressed='true']"
         );
@@ -33,16 +33,17 @@ export default async () => {
 
     const messages = {
       "ytmusic-removed": "👍🏻 Removed Like (YT Music)",
-      "ytmusic-none": "⚠️ Kein Like gesetzt (YT Music)",
+      "ytmusic-none": "⚠️ No Like set (YT Music)",
       "youtube-removed": "👍🏻 Removed Like (YouTube)",
-      "youtube-none": "⚠️ Kein Like gesetzt (YouTube)",
+      "youtube-none": "⚠️ No Like set (YouTube)",
     };
+    if (messages[result as keyof typeof messages]) {
+      await showHUD(messages[result as keyof typeof messages]);
+    }
 
-    await showHUD(
-      typeof result === "string" ? messages[result as keyof typeof messages] : "❌ Fehler beim Entfernen des Likes"
-    );
     await closeMainWindow();
   } catch (e) {
-    await showHUD("❌ Fehler beim Entfernen des Likes");
+    console.error(e);
+    await showHUD("❌ Failed to remove like");
   }
 };

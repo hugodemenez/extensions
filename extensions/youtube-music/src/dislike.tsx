@@ -24,8 +24,6 @@ export default async () => {
     const result = await runJSInYouTubeMusicTab(jsCode);
     if (result) {
       await showHUD("Disliked 👎");
-    } else {
-      await showHUD("Already disliked 👀 or not found");
     }
     await closeMainWindow();
   } catch (error) {
