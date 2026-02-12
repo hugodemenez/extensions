@@ -79,7 +79,7 @@ export async function runJSInYouTubeMusicTab(code: string): Promise<string | und
   }
 
   if (result.includes("Allow JavaScript from Apple Events")) {
-    await showHUD("⚠️ Enable \"Allow JavaScript from Apple Events\" in your browser's Develop menu.");
+    await showHUD('⚠️ Enable "Allow JavaScript from Apple Events" in your browser\'s Develop menu.');
     return;
   }
 
