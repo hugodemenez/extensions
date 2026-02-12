@@ -1,17 +1,20 @@
-import { Application, Toast, getPreferenceValues, showHUD, showToast } from "@raycast/api";
+import {
+  Application,
+  getPreferenceValues,
+  open,
+  openExtensionPreferences,
+  showHUD,
+  showToast,
+  Toast,
+} from "@raycast/api";
 import { runAppleScript } from "run-applescript";
 
 type SupportedBrowsers = "Safari" | "Chrome" | "YouTube Music" | "Microsoft Edge";
 type UrlPreference = "music" | "youtube" | "both";
-type ErrorMessages = "no-matching-tab" | "js-not-allowed";
 
 interface Preferences {
   browser: Application;
   urlPreference: UrlPreference;
-}
-
-interface OsaError {
-  stderr: string;
 }
 
 /**
@@ -69,32 +72,41 @@ export async function runJSInYouTubeMusicTab(code: string): Promise<string | und
           end repeat
         end repeat
       end tell
-      return "false"
+      return "no-matching-tab"
     `);
 
-  // Either no matching tab found or code couldn't run
-  // For example when song is already liked and we try to like it again
-  if (result === "false") {
-    return;
+  if (result.includes("Allow JavaScript from Apple Events")) {
+    showToast({
+      title: "Enable JavaScript from Apple Events",
+      message: 'Please enable "Allow JavaScript from Apple Events" in your browser\'s Develop menu.',
+      style: Toast.Style.Failure,
+      primaryAction: {
+        onAction: () => {
+          open("https://www.raycast.com/danieldbird/youtube-music");
+        },
+        title: "🔗 How to enable JavaScript from Apple Events",
+      },
+    });
+    throw new Error('⚠️ Enable "Allow JavaScript from Apple Events" in your browser\'s Develop menu.');
   }
 
-  if (result.includes("Allow JavaScript from Apple Events")) {
-    await showHUD('⚠️ Enable "Allow JavaScript from Apple Events" in your browser\'s Develop menu.');
-    return;
+  if (result.includes("JS Error")) {
+    showToast({
+      title: "JavaScript Error",
+      message: result.split("JS Error: ")[1],
+      style: Toast.Style.Failure,
+    });
+    throw new Error(result.split("JS Error: ")[1]);
+  }
+
+  if (result === "no-matching-tab") {
+    showToast({
+      title: "No matching tab found",
+      message: "Please open a YouTube or YouTube Music tab in the selected browser",
+      style: Toast.Style.Failure,
+    });
+    throw new Error("No matching tab found");
   }
 
   return result;
 }
-
-export const goToChapter = {
-  next: `(function() {
-    const activeChapter = document.querySelector('ytd-macro-markers-list-item-renderer[active]');
-    const nextChapter = activeChapter?.nextElementSibling;
-    nextChapter?.querySelector('a')?.click();
-  })();`,
-  previous: `(function(){
-    const activeChapter = document.querySelector('ytd-macro-markers-list-item-renderer[active]');
-    const previousChapter = activeChapter?.previousElementSibling;
-    previousChapter?.querySelector('a')?.click();
-  })();`,
-};

@@ -1,35 +1,35 @@
 import { closeMainWindow, showHUD } from "@raycast/api";
 import { runJSInYouTubeMusicTab } from "./utils";
 
+export const previousTrack = `(function() {
+    const isYouTubeMusic = window.location.hostname.includes("music.youtube.com");
+    const video = document.querySelector("video");
+
+    if (!video) return "no-video";
+
+    // ---- YouTube Music ----
+    if (isYouTubeMusic) {
+      const previousBtn = document.querySelector("ytmusic-player-bar .previous-button #button");
+      if (previousBtn) {
+        previousBtn.click();
+        return "ytmusic-prev";
+      }
+      return "ytmusic-fail";
+    }
+
+    // ---- YouTube (normal) ----
+    if (video.currentTime > 2) {
+      video.currentTime = 0;
+      return "youtube-restart";
+    } else {
+      history.back();
+      return "youtube-back";
+    }
+  })();
+`;
 export default async () => {
   try {
-    const result = await runJSInYouTubeMusicTab(`
-      (function () {
-        const isYouTubeMusic = window.location.hostname.includes("music.youtube.com");
-        const video = document.querySelector("video");
-
-        if (!video) return "no-video";
-
-        // ---- YouTube Music ----
-        if (isYouTubeMusic) {
-          const previousBtn = document.querySelector("ytmusic-player-bar .previous-button #button");
-          if (previousBtn) {
-            previousBtn.click();
-            return "ytmusic-prev";
-          }
-          return "ytmusic-fail";
-        }
-
-        // ---- YouTube (normal) ----
-        if (video.currentTime > 2) {
-          video.currentTime = 0;
-          return "youtube-restart";
-        } else {
-          history.back();
-          return "youtube-back";
-        }
-      })();
-    `);
+    const result = await runJSInYouTubeMusicTab(previousTrack);
 
     if (result) {
       // Feedback based on result
@@ -55,6 +55,6 @@ export default async () => {
     }
     await closeMainWindow();
   } catch (error) {
-    await showHUD("❌ Failed to run previous command");
+    // do nothing if error is thrown because it will be handled by the toast
   }
 };
