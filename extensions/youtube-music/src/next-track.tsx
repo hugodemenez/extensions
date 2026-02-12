@@ -29,25 +29,24 @@ export default async () => {
   try {
     const result = await runJSInYouTubeMusicTab(nextTrack);
 
-    if (result) {
-      switch (result) {
-        case "ytmusic-next":
-          await showHUD("⏭️ Next Song (YT Music)");
-          break;
-        case "youtube-next":
-          await showHUD("⏭️ Next Video");
-          break;
-        case "ytmusic-fail":
-          await showHUD("❌ No Next Button (YT Music)");
-          break;
-        case "youtube-fail":
-          await showHUD("❌ No Next Video Button");
-          break;
-        default:
-          await showHUD("❌ Unknown Error");
-      }
-    } else {
-      await showHUD("No next track or tab not found");
+    const result = await runJSInYouTubeMusicTab(nextTrack);
+
+    switch (result) {
+      case "ytmusic-next":
+        await showHUD("⏭️ Next Song (YT Music)");
+        break;
+      case "youtube-next":
+        await showHUD("⏭️ Next Video");
+        break;
+      case "ytmusic-fail":
+        await showHUD("❌ No Next Button (YT Music)");
+        break;
+      case "youtube-fail":
+        await showHUD("❌ No Next Video Button");
+        break;
+      default:
+        await showHUD("❌ Unknown Error");
+    }
     }
 
     await closeMainWindow();
