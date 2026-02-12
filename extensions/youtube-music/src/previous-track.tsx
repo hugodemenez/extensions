@@ -31,8 +31,9 @@ export default async () => {
   try {
     const result = await runJSInYouTubeMusicTab(previousTrack);
 
-    if (result) {
-      // Feedback based on result
+    const result = await runJSInYouTubeMusicTab(previousTrack);
+
+    // Feedback based on result
       switch (result) {
         case "ytmusic-prev":
           await showHUD("⏮️ Previous Song (YT Music)");
