@@ -29,8 +29,6 @@ export default async () => {
   try {
     const result = await runJSInYouTubeMusicTab(nextTrack);
 
-    const result = await runJSInYouTubeMusicTab(nextTrack);
-
     switch (result) {
       case "ytmusic-next":
         await showHUD("⏭️ Next Song (YT Music)");
@@ -46,7 +44,6 @@ export default async () => {
         break;
       default:
         await showHUD("❌ Unknown Error");
-    }
     }
 
     await closeMainWindow();
