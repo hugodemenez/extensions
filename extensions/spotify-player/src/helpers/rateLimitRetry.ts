@@ -10,8 +10,9 @@ export function withRateLimitRetry(fetchFn: FetchFn): FetchFn {
 
         if (response.status === 429) {
           const retryAfter = response.headers.get("Retry-After");
-          const waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 1;
-          const waitMs = (isNaN(waitSeconds) ? 1 : waitSeconds) * 1000;
+          const baseSeconds = retryAfter ? parseInt(retryAfter, 10) : 1;
+          const waitSeconds = (isNaN(baseSeconds) ? 1 : baseSeconds) + 2;
+          const waitMs = waitSeconds * 1000;
 
           await new Promise((resolve) => setTimeout(resolve, waitMs));
           throw new Error(`Rate limited, retrying after ${waitSeconds}s`);
